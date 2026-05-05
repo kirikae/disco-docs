@@ -47,6 +47,18 @@ jobs:
           OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
           echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
 
+          # Dynamically detect the last 3 release branches
+          # 1. git ls-remote: Gets all branch names directly from the source
+          # 2. grep: Filters only branches named "release-1.XX"
+          # 3. sed: Strips the "refs/heads/" prefix
+          # 4. sort -uV: Sorts them numerically by version (Unique, Version sort)
+          # 5. tail -n 5: Grabs the top 5 latest versions
+          # 6. tr/xargs: Formats them into a single space-separated string
+          DETECTED_VERSIONS=$(git ls-remote --heads origin | grep -o 'refs/heads/release-1\.[0-9]*' | sed 's|refs/heads/||' | sort -uV | tail -n 5 | tr '\n' ' ' | xargs)
+          
+          echo "Detected versions to build: $DETECTED_VERSIONS"
+          echo "OLD_VERSIONS=$DETECTED_VERSIONS" >> $GITHUB_ENV
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -60,10 +72,12 @@ jobs:
       - name: Build and push Kubernetes image
         uses: docker/build-push-action@v5
         with:
-          # Set context to the subdirectory
           context: ./kubernetes-io
           file: ./kubernetes-io/Dockerfile
           push: true
+          # Pass the dynamically detected versions into the Dockerfile
+          build-args: |
+            OLD_VERSIONS=${{ env.OLD_VERSIONS }}
           tags: |
             ghcr.io/${{ env.OWNER_LC }}/k8s-offline-docs:latest
             ghcr.io/${{ env.OWNER_LC }}/k8s-offline-docs:${{ env.COMMIT_SHA }}
