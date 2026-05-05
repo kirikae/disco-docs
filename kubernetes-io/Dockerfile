@@ -3,26 +3,20 @@ FROM hugomods/hugo:exts-0.125.4 AS builder
 
 USER root
 WORKDIR /app
-
-# Prevent Git security warnings when running as root in the container
 RUN git config --global safe.directory '*'
-
 COPY k8s-website/ .
 
-# Define which older versions to build (Space separated)
 ARG OLD_VERSIONS=""
 
-# 1. Build the older versions into subdirectories
+# 1. Build the older versions into subdirectories using ROOT-RELATIVE base URLs
 RUN for version in $OLD_VERSIONS; do \
       echo "Building $version..."; \
       git reset --hard; \
       git checkout $version; \
-      # Try to patch the CSS file, but don't fail if older versions don't have this exact line
       sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true; \
       npm ci; \
-      # Extract the "1.29" from "release-1.29" to use as the folder name
       V_DIR=$(echo $version | sed 's/release-/v/'); \
-      hugo --minify --environment production --renderSegments en --baseURL "http://REPLACE_ME_BASE_URL/$V_DIR/" -d /app/public/$V_DIR; \
+      hugo --minify --environment production --renderSegments en --baseURL "/$V_DIR/" -d /app/public/$V_DIR; \
     done
 
 # 2. Build the main/current version into the root directory
@@ -31,23 +25,35 @@ RUN echo "Building main version..." && \
     git checkout main && \
     sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true && \
     npm ci && \
-    hugo --minify --environment production --renderSegments en --baseURL "http://REPLACE_ME_BASE_URL/" -d /app/public
+    hugo --minify --environment production --renderSegments en --baseURL "/" -d /app/public
+
+# 3. Patch the hardcoded domain names across all generated HTML files
+# This forces the version dropdown menu to use local, root-relative paths.
+RUN find /app/public -type f -name "*.html" -exec sed -i \
+    -e 's|https://v1-\([0-9]\{2\}\)\.docs\.kubernetes\.io|/v1.\1|g' \
+    -e 's|https://kubernetes\.io/v1\.[0-9]\{2\}||g' \
+    -e 's|https://kubernetes\.io/|/|g' \
+    -e 's|https://kubernetes\.io|/|g' {} +
 
 # --- Stage 2: Serve the Offline Site ---
 FROM nginx:alpine
 
 COPY --from=builder /app/public /usr/share/nginx/html
 
-# Update the startup script to patch the version dropdown links AND the baseURL
-RUN echo '#!/bin/sh' > /docker-entrypoint.d/99-set-baseurl.sh && \
-    # First, intercept the dropdown menu URLs (https://v1-XX.docs.kubernetes.io) and reroute them to our dummy URL paths
-    echo 'find /usr/share/nginx/html -type f -name "*.html" -exec sed -i "s|https://v1-\([0-9]\{2\}\)\.docs\.kubernetes\.io/|http://REPLACE_ME_BASE_URL/v1.\1/|g" {} +' >> /docker-entrypoint.d/99-set-baseurl.sh && \
-    # Second, replace the dummy URL with the actual runtime $BASE_URL
-    echo 'if [ -n "$BASE_URL" ]; then' >> /docker-entrypoint.d/99-set-baseurl.sh && \
-    echo '  echo "Dynamically updating baseURL to $BASE_URL..."' >> /docker-entrypoint.d/99-set-baseurl.sh && \
-    echo '  find /usr/share/nginx/html -type f \( -name "*.html" -o -name "*.xml" -o -name "*.css" -o -name "*.js" \) -exec sed -i "s|http://REPLACE_ME_BASE_URL/|$BASE_URL|g" {} +' >> /docker-entrypoint.d/99-set-baseurl.sh && \
-    echo 'fi' >> /docker-entrypoint.d/99-set-baseurl.sh && \
-    chmod +x /docker-entrypoint.d/99-set-baseurl.sh
+# Create a custom Nginx configuration
+RUN echo "server {" > /etc/nginx/conf.d/default.conf && \
+    echo "    listen 80;" >> /etc/nginx/conf.d/default.conf && \
+    # CRITICAL: Forces Nginx to use relative paths for redirects, keeping port 8080 intact
+    echo "    absolute_redirect off;" >> /etc/nginx/conf.d/default.conf && \
+    echo "    root /usr/share/nginx/html;" >> /etc/nginx/conf.d/default.conf && \
+    echo "    index index.html index.htm;" >> /etc/nginx/conf.d/default.conf && \
+    # Automatically intercepts and fixes the "double-up" directory issue from the dropdown menu clicks
+    echo "    location ~ ^/(v1\.[0-9]+)/v1\.[0-9]+(.*)$ {" >> /etc/nginx/conf.d/default.conf && \
+    echo "        return 301 /\$1\$2;" >> /etc/nginx/conf.d/default.conf && \
+    echo "    }" >> /etc/nginx/conf.d/default.conf && \
+    echo "    location / {" >> /etc/nginx/conf.d/default.conf && \
+    echo "        try_files \$uri \$uri/ =404;" >> /etc/nginx/conf.d/default.conf && \
+    echo "    }" >> /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
