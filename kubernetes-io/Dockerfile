@@ -36,24 +36,11 @@ RUN find /app/public -type f \( -name "*.html" -o -name "*.js" -o -name "*.json"
     -e 's|https://kubernetes\.io|/|g' {} +
 
 # --- Stage 2: Serve the Offline Site ---
-FROM nginx:alpine
+FROM registry.access.redhat.com/hi/nginx:latest
 
 COPY --from=builder /app/public /usr/share/nginx/html
 
-# Create a custom Nginx configuration
-RUN echo "server {" > /etc/nginx/conf.d/default.conf && \
-    echo "    listen 80;" >> /etc/nginx/conf.d/default.conf && \
-    # CRITICAL: Forces Nginx to use relative paths for redirects, keeping port 8080 intact
-    echo "    absolute_redirect off;" >> /etc/nginx/conf.d/default.conf && \
-    echo "    root /usr/share/nginx/html;" >> /etc/nginx/conf.d/default.conf && \
-    echo "    index index.html index.htm;" >> /etc/nginx/conf.d/default.conf && \
-    # Automatically intercepts and fixes the "double-up" directory issue from the dropdown menu clicks
-    echo "    location ~ ^/(v1\.[0-9]+)/v1\.[0-9]+(.*)$ {" >> /etc/nginx/conf.d/default.conf && \
-    echo "        return 301 /\$1\$2;" >> /etc/nginx/conf.d/default.conf && \
-    echo "    }" >> /etc/nginx/conf.d/default.conf && \
-    echo "    location / {" >> /etc/nginx/conf.d/default.conf && \
-    echo "        try_files \$uri \$uri/ =404;" >> /etc/nginx/conf.d/default.conf && \
-    echo "    }" >> /etc/nginx/conf.d/default.conf
+COPY default.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
