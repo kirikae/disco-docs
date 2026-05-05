@@ -36,10 +36,13 @@ RUN find /app/public -type f \( -name "*.html" -o -name "*.js" -o -name "*.json"
     -e 's|https://kubernetes\.io|/|g' {} +
 
 # --- Stage 2: Serve the Offline Site ---
-FROM registry.access.redhat.com/hi/nginx:latest
+#FROM registry.access.redhat.com/hi/nginx:latest
+FROM nginx:alpine
 
 COPY --from=builder /app/public /usr/share/nginx/html
 
 COPY default.conf /etc/nginx/conf.d/default.conf
 
-CMD ["-g", "daemon off;"]
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
