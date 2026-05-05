@@ -1,34 +1,21 @@
 # --- Stage 1: Build the Static Site ---
-FROM node:20-bookworm-slim AS builder
+# The 'exts' tag includes Hugo Extended, Node.js, and Go natively.
+FROM hugomods/hugo:exts AS builder
 
-# Install core dependencies for downloading and compiling
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    ca-certificates \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Go (Strictly required for Hugo Modules to download dependencies)
-ENV GO_VERSION=1.22.2
-RUN curl -L "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -xz -C /usr/local
-ENV PATH="/usr/local/go/bin:${PATH}"
-
-# Install Hugo Extended
-ENV HUGO_VERSION=0.125.4
-RUN curl -L "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_Linux-64bit.tar.gz" \
-    | tar -xz -C /usr/local/bin hugo
+# Switch to root to avoid permission issues when copying 
+# files checked out by the GitHub Actions runner
+USER root
 
 WORKDIR /app
 
 # Copy the Kubernetes website source code
 COPY k8s-website/ .
 
-# Install Node.js dependencies (PostCSS, Autoprefixer, etc.)
+# Install Node.js dependencies
 RUN npm ci
 
 # Build the site for production
-RUN hugo --minify --environment production
+RUN hugo --minify --environment production --renderSegments en
 
 # --- Stage 2: Serve the Offline Site ---
 FROM nginx:alpine
