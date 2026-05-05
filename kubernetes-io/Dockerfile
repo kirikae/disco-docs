@@ -1,5 +1,4 @@
 # --- Stage 1: Build the Static Site ---
-# The 'exts' tag includes Hugo Extended, Node.js, and Go natively.
 FROM hugomods/hugo:exts-0.125.4 AS builder
 
 # Switch to root to avoid permission issues when copying 
@@ -11,10 +10,14 @@ WORKDIR /app
 # Copy the Kubernetes website source code
 COPY k8s-website/ .
 
+# Patch the CSS partial to bypass the missing Case Studies SCSS compilation.
+# This changes `{{- if (eq .Section "case-studies") }}` to `{{- if false }}`
+RUN sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html
+
 # Install Node.js dependencies
 RUN npm ci
 
-# Build the site for production
+# Build the site for production, restricted ONLY to the English segment
 RUN hugo --minify --environment production --renderSegments en
 
 # --- Stage 2: Serve the Offline Site ---
