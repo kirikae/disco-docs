@@ -1,6 +1,6 @@
 # --- Stage 1: Build the Static Site ---
 # The 'exts' tag includes Hugo Extended, Node.js, and Go natively.
-FROM hugomods/hugo:exts AS builder
+FROM hugomods/hugo:exts-0.125.4 AS builder
 
 # Switch to root to avoid permission issues when copying 
 # files checked out by the GitHub Actions runner
