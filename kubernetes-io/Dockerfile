@@ -1,8 +1,13 @@
 # --- Stage 1: Build the Static Site ---
-FROM node:20-alpine AS builder
+FROM node:20-bookworm-slim AS builder
 
-# Install dependencies required for Hugo Extended and fetching code
-RUN apk add --no-cache git curl libc6-compat libstdc++ build-base
+# Install dependencies required for Hugo Extended, downloading, and native node modules
+RUN apt-get update && apt-get install -y \
+    git \
+    curl \
+    ca-certificates \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Hugo Extended
 # The k8s website requires the "extended" version of Hugo for SCSS processing.
@@ -13,7 +18,6 @@ RUN curl -L "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}
 WORKDIR /app
 
 # Copy the Kubernetes website source code
-# (This assumes GitHub Actions checks the repo out into a folder named "k8s-website")
 COPY k8s-website/ .
 
 # Install Node.js dependencies (PostCSS, Autoprefixer, etc.)
@@ -23,6 +27,8 @@ RUN npm ci
 RUN hugo --minify --environment production
 
 # --- Stage 2: Serve the Offline Site ---
+# We can still safely use Alpine for the final Nginx stage, 
+# because it's only serving pre-built HTML/CSS at this point!
 FROM nginx:alpine
 
 # Copy the built static files from the builder stage
