@@ -16,7 +16,7 @@ RUN for version in $OLD_VERSIONS; do \
       sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true; \
       npm ci; \
       V_DIR=$(echo $version | sed 's/release-/v/'); \
-      HUGO_RELATIVEURLS=true hugo --minify --environment production --renderSegments en --baseURL "/$V_DIR/" -d /app/public/$V_DIR; \
+      hugo --minify --environment production --renderSegments en --baseURL "/$V_DIR/" -d /app/public/$V_DIR; \
     done
 
 # 2. Build the main/current version into the root directory
@@ -25,7 +25,7 @@ RUN echo "Building main version..." && \
     git checkout main && \
     sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true && \
     npm ci && \
-    HUGO_RELATIVEURLS=true hugo --minify --environment production --renderSegments en --baseURL "/" -d /app/public
+    hugo --minify --environment production --renderSegments en --baseURL "/" -d /app/public
 
 # 3. Patch any remaining hardcoded domain names
 # We inject /main-version/ as a dummy path to outsmart the Javascript dropdown router.
