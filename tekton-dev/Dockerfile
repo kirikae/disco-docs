@@ -1,48 +1,44 @@
 # --- Stage 1: Build the Static Site ---
-FROM node:22.14.0-bookworm-slim AS builder
+# Use the exact base image from Tekton's docker-compose
+FROM klakegg/hugo:0.107.0-ext-ubuntu AS builder
 
-USER root
-WORKDIR /app
+# The Tekton Dockerfile sets up in /src
+WORKDIR /src
 
-# 1. Install Python3, pip, git, and curl
-RUN apt-get update && apt-get install -y \
-    python3 \
-    python3-pip \
-    python3-venv \
-    git \
-    curl \
-    ca-certificates \
-    build-essential \
-    && rm -rf /var/lib/apt/lists/*
+# 1. Install the base OS prerequisites they require
+RUN apt-get update && \
+    apt-get install -y git build-essential python3-venv python3-pip curl && \
+    rm -rf /var/lib/apt/lists/*
 
-# 2. Lock in the exact NPM version requirement
-RUN npm install -g npm@10.9.2
+# 2. Lock in your strict Node v22.14.0 and NPM v10.9.2 requirements
+# The klakegg image has an older version of Node, so we overwrite it using NodeSource
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y nodejs && \
+    npm install -g npm@10.9.2
 
-# 3. Lock in the exact Hugo Extended v0.107.0 requirement
-ENV HUGO_VERSION=0.107.0
-RUN curl -L "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_Linux-64bit.tar.gz" \
-    | tar -xz -C /usr/local/bin hugo
+# Prevent Git security warnings
+RUN git config --global --add safe.directory '*'
 
-RUN git config --global safe.directory '*'
+# Copy the Tekton website source code
 COPY tekton-website/ .
 
-# 4. Install Node modules using `npm install` (Fixes the EUSAGE error!)
+# 3. Install Node modules using `npm install`
 RUN npm install
 
-# 5. Execute the Tekton Sync Script
-# Runs inside the virtual environment to pull all the markdown files from other repos
+# 4. Execute the Tekton Sync Script
+# This downloads all the markdown files from the external Tekton sub-projects
 RUN python3 -m venv .venv && \
     . .venv/bin/activate && \
-    pip install -r requirements.txt && \
+    pip3 install -r requirements.txt && \
     ./sync/sync.py
 
-# 6. Build the site for production using root-relative paths
-RUN hugo --minify --environment production --baseURL "/" -d /app/public
+# 5. Build the site for production using root-relative paths
+RUN hugo --minify --environment production --baseURL "/" -d /src/public
 
 # --- Stage 2: Serve the Offline Site ---
 FROM nginx:alpine
 
-COPY --from=builder /app/public /usr/share/nginx/html
+COPY --from=builder /src/public /usr/share/nginx/html
 COPY default.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
