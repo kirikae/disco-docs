@@ -85,51 +85,51 @@ jobs:
           cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/k8s-offline-docs:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/k8s-offline-docs:buildcache,mode=max
 
-build-tekton-docs:
-    if: >
-      github.event_name == 'schedule' || 
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'tekton-docs'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout your repository
-        uses: actions/checkout@v4
+  build-tekton-dev:
+      if: >
+        github.event_name == 'schedule' || 
+        github.event.inputs.site_to_build == 'all' || 
+        github.event.inputs.site_to_build == 'tekton-dev'
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout your repository
+          uses: actions/checkout@v4
 
-      - name: Checkout official Tekton website repository
-        uses: actions/checkout@v4
-        with:
-          repository: tektoncd/website
-          path: tekton-docs/tekton-website
-          submodules: true
-          fetch-depth: 1
+        - name: Checkout official Tekton website repository
+          uses: actions/checkout@v4
+          with:
+            repository: tektoncd/website
+            path: tekton-dev/tekton-website
+            submodules: true
+            fetch-depth: 1
 
-      - name: Prepare tags and environment
-        id: prep
-        run: |
-          cd tekton-docs/tekton-website
-          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
-          
-          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
+        - name: Prepare tags and environment
+          id: prep
+          run: |
+            cd tekton-dev/tekton-website
+            echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+            
+            OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+            echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        - name: Set up Docker Buildx
+          uses: docker/setup-buildx-action@v3
 
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+        - name: Log in to GitHub Container Registry
+          uses: docker/login-action@v3
+          with:
+            registry: ghcr.io
+            username: ${{ github.actor }}
+            password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Tekton image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./tekton-docs
-          file: ./tekton-docs/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:latest
-            ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:${{ env.COMMIT_SHA }}
-          cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:buildcache,mode=max
+        - name: Build and push Tekton image
+          uses: docker/build-push-action@v5
+          with:
+            context: ./tekton-dev
+            file: ./tekton-dev/Dockerfile
+            push: true
+            tags: |
+              ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:latest
+              ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:${{ env.COMMIT_SHA }}
+            cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:buildcache
+            cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:buildcache,mode=max
