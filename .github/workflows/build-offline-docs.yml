@@ -293,14 +293,14 @@ jobs:
       - name: Checkout your repository
         uses: actions/checkout@v4
 
-      # Note: The Ceph repository is absolutely massive. We enforce fetch-depth: 1 
-      # so GitHub Actions only downloads the newest commit, saving gigabytes of bandwidth.
+      # Because we are building historical branches in Docker, we must disable 
+      # fetch-depth: 1 here so the Docker builder has access to the full git history!
       - name: Checkout official Ceph repository
         uses: actions/checkout@v4
         with:
           repository: ceph/ceph
           path: docs-ceph-com/ceph-repo
-          fetch-depth: 1
+          fetch-depth: 0
 
       - name: Prepare tags and environment
         id: prep
