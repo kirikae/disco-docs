@@ -132,7 +132,7 @@ jobs:
     if: >
       github.event_name == 'schedule' || 
       github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'cert-manager'
+      github.event.inputs.site_to_build == 'cert-manager-io'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
