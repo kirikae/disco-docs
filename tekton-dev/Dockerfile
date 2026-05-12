@@ -27,13 +27,26 @@ RUN python3 -m venv .venv && \
     pip3 install -r requirements.txt && \
     ./sync/sync.py
 
-# 5. --- OFFLINE ROUTING & CDN PATCH ---
-# Strip hardcoded domains, remove SRI hashes, and delete external font dependencies
-RUN find . \( -path "./.git" -o -path "./node_modules" -o -path "./.venv" -o -path "./public" \) -prune -o \
-      -type f \( -name "*.html" -o -name "*.js" -o -name "*.toml" -o -name "*.yaml" \) \
-      -exec sed -i -e 's|https://tekton\.dev||g' -e 's/ integrity="sha[0-9]*-[^"]*"//g' {} + || true && \
+# 5. --- OFFLINE VENDORING & ROUTING PATCH ---
+RUN mkdir -p static/js && \
+    # Dynamically extract and download the exact CDN scripts Tekton uses
+    for url in $(grep -hoP 'https://[^"]*(jquery-3\.6\.1\.min\.js|popper\.min\.js|bootstrap\.min\.js)' $(find layouts -type f -name "*.html") | sort -u); do \
+      filename=$(basename "$url" | cut -d? -f1); \
+      echo "Downloading $url..."; \
+      curl -sSL "$url" -o "static/js/$filename" || true; \
+    done && \
+    # Rewrite the CDN paths to point to our newly downloaded local files
+    find layouts -type f -name "*.html" -exec sed -i -E 's|https://[^"]*jquery-3\.6\.1\.min\.js|/js/jquery-3.6.1.min.js|g' {} + || true && \
+    find layouts -type f -name "*.html" -exec sed -i -E 's|https://[^"]*popper\.min\.js|/js/popper.min.js|g' {} + || true && \
+    find layouts -type f -name "*.html" -exec sed -i -E 's|https://[^"]*bootstrap\.min\.js|/js/bootstrap.min.js|g' {} + || true && \
+    # Strip external fonts that hang the network
+    find layouts -type f -name "*.html" -exec sed -i -E 's|<link[^>]*font-face.css[^>]*>||g' {} + || true && \
     find layouts -type f -name "*.html" -exec sed -i -E 's|<link[^>]*fonts.googleapis.com[^>]*>||g' {} + || true && \
-    find layouts -type f -name "*.html" -exec sed -i -E 's|<link[^>]*fonts.gstatic.com[^>]*>||g' {} + || true
+    find layouts -type f -name "*.html" -exec sed -i -E 's|<link[^>]*fonts.gstatic.com[^>]*>||g' {} + || true && \
+    # Strip hardcoded domains, remove SRI hashes, and remove crossorigin tags
+    find . \( -path "./.git" -o -path "./node_modules" -o -path "./.venv" -o -path "./public" \) -prune -o \
+      -type f \( -name "*.html" -o -name "*.js" -o -name "*.toml" -o -name "*.yaml" \) \
+      -exec sed -i -e 's|https://tekton\.dev||g' -e 's/ integrity="sha[0-9]*-[^"]*"//g' -e 's/ crossorigin="anonymous"//g' {} + || true
 
 # 6. Build the site for production using root-relative paths
 RUN hugo --minify --environment production --baseURL "/" -d /src/public
