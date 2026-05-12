@@ -15,6 +15,7 @@ on:
           - kubernetes-io
           - tekton-dev
           - cert-manager-io
+          - argo-cd-readthedocs-io
 
 permissions:
   contents: read
@@ -175,3 +176,59 @@ jobs:
             ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:${{ env.COMMIT_SHA }}
           cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:buildcache
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:buildcache,mode=max
+
+  build-argo-cd-docs:
+    if: >
+      github.event_name == 'schedule' || 
+      github.event.inputs.site_to_build == 'all' || 
+      github.event.inputs.site_to_build == 'argo-cd-readthedocs-io'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official Argo CD repository
+        uses: actions/checkout@v4
+        with:
+          repository: argoproj/argo-cd
+          path: argo-cd-readthedocs-io/argo-cd-repo
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd argo-cd-readthedocs-io/argo-cd-repo
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
+
+          # Detect the last 3 release branches (e.g., release-2.9 release-2.10 release-2.11)
+          DETECTED_VERSIONS=$(git ls-remote --heads origin | grep -o 'refs/heads/release-[0-9]*\.[0-9]*' | sed 's|refs/heads/||' | sort -uV | tail -n 3 | tr '\n' ' ' | xargs)
+          echo "OLD_VERSIONS=$DETECTED_VERSIONS" >> $GITHUB_ENV
+          echo "Detected versions to build: $DETECTED_VERSIONS"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Argo CD image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./argo-cd-readthedocs-io
+          file: ./argo-cd-readthedocs-io/Dockerfile
+          push: true
+          # Pass the dynamically detected versions to the Dockerfile
+          build-args: |
+            OLD_VERSIONS=${{ env.OLD_VERSIONS }}
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/argo-cd-offline-docs:latest
+            ghcr.io/${{ env.OWNER_LC }}/argo-cd-offline-docs:${{ env.COMMIT_SHA }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/argo-cd-offline-docs:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/argo-cd-offline-docs:buildcache,mode=max
