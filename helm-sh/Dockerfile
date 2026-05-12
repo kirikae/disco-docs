@@ -14,31 +14,28 @@ RUN apt-get update && apt-get install -y \
 
 RUN git config --global --add safe.directory '*'
 
-# Copy the Helm website source
 COPY helm-www/ .
 
-# 2. Install dependencies using Yarn (Helm's preferred package manager for Docusaurus)
+# 2. Install dependencies using Yarn
 RUN yarn install --frozen-lockfile || yarn install
 
 # 3. Pull in the external Community documentation 
-# Helm explicitly stores its community docs in a separate GitHub repository. 
-# This native script downloads them locally before the build begins.
 RUN yarn download-remote-community || true
 
-# 4. Build the Docusaurus site
-# Docusaurus natively compiles all historical versions and outputs purely static files.
-RUN yarn build
+# 4. --- OFFLINE PATCHING & CONFIG OVERRIDES ---
+# Downgrade strict broken link errors to warnings so external typos don't crash the build
+RUN sed -i -E "s/onBrokenLinks: ['\"]throw['\"]/onBrokenLinks: 'warn'/g" docusaurus.config.js || true
 
-# 5. Strip External Dependencies (Offline Mode)
-# Docusaurus injects Google Fonts and Algolia Search by default. We strip them from 
-# the compiled HTML so the browser doesn't hang in an air-gapped environment.
+# 5. Build the Docusaurus site (English ONLY to save space and build time)
+RUN yarn build --locale en
+
+# 6. Strip External Dependencies (Offline Mode)
 RUN find build -type f -name "*.html" -exec sed -i -E 's/<link[^>]*fonts.(googleapis|gstatic).com[^>]*>//g' {} + || true && \
     find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*google-analytics[^>]*>.*<\/script>//g' {} + || true
 
 # --- Stage 2: Serve the Offline Site ---
 FROM nginx:alpine
 
-# Docusaurus outputs the compiled static site to the 'build' directory
 COPY --from=builder /app/build /usr/share/nginx/html
 COPY default.conf /etc/nginx/conf.d/default.conf
 
