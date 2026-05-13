@@ -26,8 +26,8 @@ RUN count=1 && for version in $OLD_VERSIONS; do \
       # Install dependencies (they sometimes change between releases)
       pip install --no-cache-dir -r docs/requirements.txt || true; \
       \
-      # Patch mkdocs.yml to use relative offline paths
-      sed -i "s|site_url:.*|site_url: '/'|g" mkdocs.yml || true; \
+      # Patch mkdocs.yml to use an EMPTY STRING for native MkDocs offline mode
+      sed -i "s|^site_url:.*|site_url: ''|g" mkdocs.yml || true; \
       # Activate the native MkDocs Material version dropdown via inline Python
       python3 -c "import yaml; d=yaml.safe_load(open('mkdocs.yml')); d.setdefault('extra',{})['version']={'provider':'mike'}; yaml.dump(d, open('mkdocs.yml','w'))" || true; \
       \
@@ -47,7 +47,8 @@ RUN count=1 && for version in $OLD_VERSIONS; do \
 RUN echo "Building main version..." && \
     git reset --hard && git checkout master && \
     pip install --no-cache-dir -r docs/requirements.txt && \
-    sed -i "s|site_url:.*|site_url: '/'|g" mkdocs.yml || true && \
+    # Patch mkdocs.yml to use an EMPTY STRING for native MkDocs offline mode
+    sed -i "s|^site_url:.*|site_url: ''|g" mkdocs.yml || true && \
     python3 -c "import yaml; d=yaml.safe_load(open('mkdocs.yml')); d.setdefault('extra',{})['version']={'provider':'mike'}; yaml.dump(d, open('mkdocs.yml','w'))" || true && \
     mkdocs build -d /out/chunk_main && \
     find /out/chunk_main -type f -name "*.html" -exec sed -i -E 's|<link[^>]*fonts.(googleapis|gstatic).com[^>]*>||g' {} + || true && \
@@ -57,11 +58,14 @@ RUN echo "Building main version..." && \
 # --- Stage 2: Serve the Offline Site ---
 FROM nginx:alpine
 
-# Merge all chunks into Nginx
-COPY --from=builder /out/chunk_old_1 /usr/share/nginx/html
-COPY --from=builder /out/chunk_old_2 /usr/share/nginx/html
-COPY --from=builder /out/chunk_old_3 /usr/share/nginx/html
-COPY --from=builder /out/chunk_main /usr/share/nginx/html
+# 1. Forcefully delete the default Nginx welcome page and assets
+RUN rm -rf /usr/share/nginx/html/*
+
+# 2. Merge all chunks into Nginx
+COPY --from=builder /out/chunk_old_1/ /usr/share/nginx/html/
+COPY --from=builder /out/chunk_old_2/ /usr/share/nginx/html/
+COPY --from=builder /out/chunk_old_3/ /usr/share/nginx/html/
+COPY --from=builder /out/chunk_main/ /usr/share/nginx/html/
 
 COPY default.conf /etc/nginx/conf.d/default.conf
 
