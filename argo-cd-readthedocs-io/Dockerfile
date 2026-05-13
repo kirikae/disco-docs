@@ -21,13 +21,13 @@ RUN echo "[]" > /tmp/versions.json && \
 # 1. Build historical versions
 RUN count=1 && for version in $OLD_VERSIONS; do \
       echo "Building $version..."; \
-      git reset --hard && git checkout $version; \
+      # Clean the working directory between checkouts to prevent conflicts
+      git reset --hard && git clean -fdx && git checkout $version || true; \
       \
-      # Install dependencies (they sometimes change between releases)
       pip install --no-cache-dir -r docs/requirements.txt || true; \
       \
-      # Patch mkdocs.yml to use an EMPTY STRING for native MkDocs offline mode
-      sed -i "s|^site_url:.*|site_url: ''|g" mkdocs.yml || true; \
+      # FIX: Completely delete the site_url line to bypass the strict URI validator
+      sed -i '/^site_url:/d' mkdocs.yml || true; \
       # Activate the native MkDocs Material version dropdown via inline Python
       python3 -c "import yaml; d=yaml.safe_load(open('mkdocs.yml')); d.setdefault('extra',{})['version']={'provider':'mike'}; yaml.dump(d, open('mkdocs.yml','w'))" || true; \
       \
@@ -39,19 +39,21 @@ RUN count=1 && for version in $OLD_VERSIONS; do \
       # Build this old version directly into its chunk directory
       mkdocs build -d /out/chunk_old_${count}/$V_DIR; \
       # Strip external fonts
-      find /out/chunk_old_${count}/$V_DIR -type f -name "*.html" -exec sed -i -E 's|<link[^>]*fonts.(googleapis|gstatic).com[^>]*>||g' {} + || true; \
+      find /out/chunk_old_${count}/$V_DIR -type f -name "*.html" -exec sed -i -E 's/<link[^>]*fonts.(googleapis|gstatic).com[^>]*>//g' {} + || true; \
       count=$((count + 1)); \
     done
 
 # 2. Build the main version
 RUN echo "Building main version..." && \
-    git reset --hard && git checkout master && \
+    git reset --hard && git clean -fdx && git checkout master && \
     pip install --no-cache-dir -r docs/requirements.txt && \
-    # Patch mkdocs.yml to use an EMPTY STRING for native MkDocs offline mode
-    sed -i "s|^site_url:.*|site_url: ''|g" mkdocs.yml || true && \
+    \
+    # FIX: Completely delete the site_url line
+    sed -i '/^site_url:/d' mkdocs.yml || true && \
     python3 -c "import yaml; d=yaml.safe_load(open('mkdocs.yml')); d.setdefault('extra',{})['version']={'provider':'mike'}; yaml.dump(d, open('mkdocs.yml','w'))" || true && \
+    \
     mkdocs build -d /out/chunk_main && \
-    find /out/chunk_main -type f -name "*.html" -exec sed -i -E 's|<link[^>]*fonts.(googleapis|gstatic).com[^>]*>||g' {} + || true && \
+    find /out/chunk_main -type f -name "*.html" -exec sed -i -E 's/<link[^>]*fonts.(googleapis|gstatic).com[^>]*>//g' {} + || true && \
     # Move the completed dropdown configuration into the main root
     cp /tmp/versions.json /out/chunk_main/versions.json
 
