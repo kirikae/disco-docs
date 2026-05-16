@@ -7,6 +7,8 @@ COPY k8s-website/ .
 
 ARG OLD_VERSIONS=""
 
+RUN wget -qO- https://github.com/gohugoio/hugo/releases/download/v0.125.4/hugo_extended_0.125.4_linux-amd64.tar.gz | tar -xz -C /usr/local/bin hugo && mv /usr/local/bin/hugo /usr/local/bin/hugo-legacy
+
 RUN for version in $OLD_VERSIONS; do \
       git fetch --depth 1 https://github.com/kubernetes/website.git $version:$version || true; \
       git reset --hard && git clean -fdx; \
@@ -24,7 +26,9 @@ RUN for version in $OLD_VERSIONS; do \
         -type f \( -name "*.html" -o -name "*.js" -o -name "*.json" -o -name "*.toml" -o -name "*.yaml" \) \
         -exec sed -i -e 's|https://v1-\([0-9]\{2\}\)\.docs\.kubernetes\.io|/v1.\1|g' -e 's|https://kubernetes\.io/|/main-version/|g' -e 's|https://kubernetes\.io|/main-version|g' {} + || true; \
       V_DIR=$(echo $version | sed 's/release-/v/'); \
-      hugo --minify --environment production --baseURL "/$V_DIR/" -d /app/public/$V_DIR; \
+      if ! hugo-legacy --minify --environment production --baseURL "/$V_DIR/" -d /app/public/$V_DIR; then \
+        hugo --minify --environment production --baseURL "/$V_DIR/" -d /app/public/$V_DIR || exit 1; \
+      fi; \
     done
 
 RUN git reset --hard && git clean -fdx && \
