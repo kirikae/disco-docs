@@ -1,5 +1,5 @@
 # --- Stage 1: Build the Static Sites ---
-FROM hugomods/hugo:exts-0.125.4 AS builder
+FROM hugomods/hugo:exts-0.144.2 AS builder
 
 USER root
 WORKDIR /app
