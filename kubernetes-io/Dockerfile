@@ -11,6 +11,7 @@ RUN for version in $OLD_VERSIONS; do \
       git fetch --depth 1 https://github.com/kubernetes/website.git $version:$version || true; \
       git reset --hard && git clean -fdx; \
       git checkout $version || true; \
+      find content -mindepth 1 -maxdepth 1 -type d ! -name 'en' -exec rm -rf {} + || true; \
       sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true; \
       npm ci; \
       hugo mod vendor || true; \
@@ -23,11 +24,12 @@ RUN for version in $OLD_VERSIONS; do \
         -type f \( -name "*.html" -o -name "*.js" -o -name "*.json" -o -name "*.toml" -o -name "*.yaml" \) \
         -exec sed -i -e 's|https://v1-\([0-9]\{2\}\)\.docs\.kubernetes\.io|/v1.\1|g' -e 's|https://kubernetes\.io/|/main-version/|g' -e 's|https://kubernetes\.io|/main-version|g' {} + || true; \
       V_DIR=$(echo $version | sed 's/release-/v/'); \
-      hugo --minify --environment production --renderSegments en --baseURL "/$V_DIR/" -d /app/public/$V_DIR; \
+      hugo --minify --environment production --baseURL "/$V_DIR/" -d /app/public/$V_DIR; \
     done
 
 RUN git reset --hard && git clean -fdx && \
     git checkout main && \
+    find content -mindepth 1 -maxdepth 1 -type d ! -name 'en' -exec rm -rf {} + || true && \
     sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true && \
     npm ci && \
     hugo mod vendor || true && \
@@ -39,7 +41,7 @@ RUN git reset --hard && git clean -fdx && \
     find . \( -path "./.git" -o -path "./node_modules" -o -path "./public" \) -prune -o \
       -type f \( -name "*.html" -o -name "*.js" -o -name "*.json" -o -name "*.toml" -o -name "*.yaml" \) \
       -exec sed -i -e 's|https://v1-\([0-9]\{2\}\)\.docs\.kubernetes\.io|/v1.\1|g' -e 's|https://kubernetes\.io/|/main-version/|g' -e 's|https://kubernetes\.io|/main-version|g' {} + || true && \
-    hugo --minify --environment production --renderSegments en --baseURL "/" -d /app/public
+    hugo --minify --environment production --baseURL "/" -d /app/public
 
 RUN mkdir -p /out/chunk_old_1 /out/chunk_old_2 /out/chunk_old_3 \
              /out/chunk_old_4 /out/chunk_old_5 /out/chunk_main && \
