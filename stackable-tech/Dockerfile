@@ -40,8 +40,13 @@ RUN for ref in $(git for-each-ref --format='%(refname:short)' refs/remotes/origi
 #    redirects (`redirect_facility: netlify`), which a plain nginx cannot serve.
 #    Switch to `static` so Antora writes real static HTML redirect pages.
 # 2. Disable UI usage tracking so no external analytics script is injected.
+# 3. The mermaid extension injects `<script type="module">import mermaid from
+#    '<url>'</script>` into every page, defaulting to a jsDelivr CDN. Point it at
+#    a locally-vendored copy (added to the built site below) so diagrams render
+#    offline.
 RUN sed -i -E "s/redirect_facility:\s*netlify/redirect_facility: static/g" antora-playbook.yml && \
-    sed -i -E "s/enable_tracking:\s*true/enable_tracking: false/g" antora-playbook.yml
+    sed -i -E "s/enable_tracking:\s*true/enable_tracking: false/g" antora-playbook.yml && \
+    sed -i -E "s#mermaid_library_url:.*#mermaid_library_url: /vendor/mermaid/mermaid.esm.min.mjs#g" antora-playbook.yml
 
 # Install dependencies (root + the "ui" workspace).
 RUN npm ci || npm install
@@ -49,6 +54,13 @@ RUN npm ci || npm install
 # Full production build: builds the UI bundle, then fetches every operator/demo
 # repo from GitHub and compiles the multi-version site into build/site.
 RUN make build-prod
+
+# Vendor Mermaid so diagrams render offline (see the playbook URL patch above).
+# The whole dist/ is copied because its chunks are loaded via relative imports;
+# the absolute `/vendor/mermaid/` URL then resolves them from any page depth.
+RUN npm install --no-save --prefix /opt/mermaid mermaid@10 && \
+    mkdir -p build/site/vendor/mermaid && \
+    cp -a /opt/mermaid/node_modules/mermaid/dist/. build/site/vendor/mermaid/
 
 # Build the offline (fully static) Pagefind search index over the generated site.
 RUN make build-search-index
