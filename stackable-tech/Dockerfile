@@ -1,7 +1,10 @@
 # --- Stage 1: Build the Static Site ---
-# Node 18: the Stackable documentation-ui is Antora's default UI (gulp 4 + older
-# tooling), which is happiest on 18. Antora 3.1.x and Pagefind both run fine here.
-FROM node:18-bookworm-slim AS builder
+# Node 24: upstream stackabletech/documentation now requires Node >= 24 (its
+# .nvmrc pins 24 and package.json declares engines.node ">= 24.0.0"). The UI
+# bundler (rolldown) imports `styleText` from node:util, which only exists on
+# Node 20.12+, so the previous Node 18 pin fails the UI bundle step of
+# `make build-prod`. Antora 3.1.x and Pagefind both run fine on 24.
+FROM node:24-bookworm-slim AS builder
 
 WORKDIR /app
 
