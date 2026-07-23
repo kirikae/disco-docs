@@ -11,7 +11,7 @@ RUN wget -qO- https://github.com/gohugoio/hugo/releases/download/v0.125.4/hugo_e
 
 RUN for version in $OLD_VERSIONS; do \
       git fetch --depth 1 https://github.com/kubernetes/website.git $version:$version || true; \
-      git reset --hard && git clean -fdx; \
+      git reset --hard && git clean -fdx -e /public; \
       git checkout $version || true; \
       find content -mindepth 1 -maxdepth 1 -type d ! -name 'en' -exec rm -rf {} + || true; \
       sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true; \
@@ -22,6 +22,7 @@ RUN for version in $OLD_VERSIONS; do \
       find layouts -type f -name "*.html" -exec sed -i -E 's#https://code\.jquery\.com/(jquery-[0-9.]+\.min\.js)#/js/\1#g' {} + || true; \
       printf '\n$web-font-path: "/vendor/fonts/open-sans.css";\n' >> assets/scss/_variables_project_after_bs.scss || true; \
       sed -i -E 's#<script src="https://cdn\.jsdelivr\.net/npm/mermaid@[^"]*"[^>]*></script>#<script src="/vendor/mermaid/mermaid.min.js"></script>#' layouts/partials/scripts/mermaid.html || true; \
+      sed -i -E 's#https://cdn\.jsdelivr\.net/npm/katex@[^/"]*/dist/#/vendor/katex/#g' layouts/partials/scripts.html || true; \
       find . \( -path "./.git" -o -path "./node_modules" -o -path "./public" \) -prune -o \
         -type f \( -name "*.html" -o -name "*.js" -o -name "*.json" -o -name "*.toml" -o -name "*.yaml" \) \
         -exec sed -i -e 's|https://v1-\([0-9]\{2\}\)\.docs\.kubernetes\.io|/v1.\1|g' -e 's|https://kubernetes\.io/|/main-version/|g' -e 's|https://kubernetes\.io|/main-version|g' {} + || true; \
@@ -31,7 +32,7 @@ RUN for version in $OLD_VERSIONS; do \
       fi; \
     done
 
-RUN git reset --hard && git clean -fdx && \
+RUN git reset --hard && git clean -fdx -e /public && \
     git checkout main && \
     find content -mindepth 1 -maxdepth 1 -type d ! -name 'en' -exec rm -rf {} + || true && \
     sed -i 's/(eq .Section "case-studies")/false/g' layouts/partials/css.html || true && \
@@ -42,18 +43,23 @@ RUN git reset --hard && git clean -fdx && \
     find layouts -type f -name "*.html" -exec sed -i -E 's#https://code\.jquery\.com/(jquery-[0-9.]+\.min\.js)#/js/\1#g' {} + || true && \
     printf '\n$web-font-path: "/vendor/fonts/open-sans.css";\n' >> assets/scss/_variables_project_after_bs.scss && \
     sed -i -E 's#<script src="https://cdn\.jsdelivr\.net/npm/mermaid@[^"]*"[^>]*></script>#<script src="/vendor/mermaid/mermaid.min.js"></script>#' layouts/partials/scripts/mermaid.html && \
+    sed -i -E 's#https://cdn\.jsdelivr\.net/npm/katex@[^/"]*/dist/#/vendor/katex/#g' layouts/partials/scripts.html && \
     find . \( -path "./.git" -o -path "./node_modules" -o -path "./public" \) -prune -o \
       -type f \( -name "*.html" -o -name "*.js" -o -name "*.json" -o -name "*.toml" -o -name "*.yaml" \) \
       -exec sed -i -e 's|https://v1-\([0-9]\{2\}\)\.docs\.kubernetes\.io|/v1.\1|g' -e 's|https://kubernetes\.io/|/main-version/|g' -e 's|https://kubernetes\.io|/main-version|g' {} + || true && \
     hugo --minify --environment production --baseURL "/" -d /app/public
 
-# Vendor Mermaid and the Open Sans web font so pages render fully offline.
-# Both live once at the site root under /vendor/ and are referenced by absolute
+# Vendor Mermaid, KaTeX and the Open Sans web font so pages render fully offline.
+# All live once at the site root under /vendor/ and are referenced by absolute
 # URLs, so every built version shares a single copy (the source patches above
 # repoint the site at these paths):
 #   - Mermaid: the diagram partial injects a <script> that defaults to a jsDelivr
 #     CDN; its src was patched to /vendor/mermaid/mermaid.min.js. v9.3.0 is a
 #     single self-contained UMD bundle, matching the version the site references.
+#   - KaTeX (math rendering): scripts.html loads katex.min.css/js + auto-render
+#     from jsDelivr; the URLs were repointed to /vendor/katex/. The whole dist/
+#     is copied because katex.min.css loads its fonts via relative url(fonts/…).
+#     The version is read from the committed source so the kept SRI hashes match.
 #   - Fonts: Docsy compiles `@import url($web-font-path)` into its stylesheet,
 #     defaulting to Google Fonts, and (when $td-enable-google-fonts is on) also
 #     prepends "Open Sans" to the body font stack. We keep google-fonts enabled
@@ -69,6 +75,10 @@ RUN set -eu; \
     npm install --no-save --prefix /opt/mermaid mermaid@9.3.0; \
     mkdir -p /app/public/vendor/mermaid; \
     cp /opt/mermaid/node_modules/mermaid/dist/mermaid.min.js /app/public/vendor/mermaid/; \
+    KATEX_VER=$(git show HEAD:layouts/partials/scripts.html | grep -oE 'katex@[0-9][^/"]*' | head -1 | sed 's/katex@//'); \
+    npm install --no-save --prefix /opt/katex "katex@${KATEX_VER:-0.16.10}"; \
+    mkdir -p /app/public/vendor/katex; \
+    cp -a /opt/katex/node_modules/katex/dist/. /app/public/vendor/katex/; \
     UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"; \
     mkdir -p /app/public/vendor/fonts/files; \
     wget -q -U "$UA" -O /tmp/open-sans.css "https://fonts.googleapis.com/css?family=Open+Sans:300,300i,400,400i,700,700i&display=swap"; \
