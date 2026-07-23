@@ -30,12 +30,74 @@ permissions:
   packages: write
 
 jobs:
+  # On push, detect which site directories changed so a merge to main only
+  # rebuilds the affected images instead of all ten. A change to this workflow
+  # file trips every filter, forcing a full rebuild. schedule and
+  # workflow_dispatch skip this job entirely and rebuild via their own guards.
+  changes:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    outputs:
+      kubernetes_io: ${{ steps.filter.outputs.kubernetes_io }}
+      tekton_dev: ${{ steps.filter.outputs.tekton_dev }}
+      cert_manager_io: ${{ steps.filter.outputs.cert_manager_io }}
+      argo_cd_readthedocs_io: ${{ steps.filter.outputs.argo_cd_readthedocs_io }}
+      fluxcd_io: ${{ steps.filter.outputs.fluxcd_io }}
+      docs_ceph_com: ${{ steps.filter.outputs.docs_ceph_com }}
+      helm_sh: ${{ steps.filter.outputs.helm_sh }}
+      istio_io: ${{ steps.filter.outputs.istio_io }}
+      rabbitmq_com: ${{ steps.filter.outputs.rabbitmq_com }}
+      stackable_tech: ${{ steps.filter.outputs.stackable_tech }}
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Detect changed site directories
+        id: filter
+        uses: dorny/paths-filter@v4
+        with:
+          filters: |
+            kubernetes_io:
+              - 'kubernetes-io/**'
+              - '.github/workflows/build-offline-docs.yml'
+            tekton_dev:
+              - 'tekton-dev/**'
+              - '.github/workflows/build-offline-docs.yml'
+            cert_manager_io:
+              - 'cert-manager-io/**'
+              - '.github/workflows/build-offline-docs.yml'
+            argo_cd_readthedocs_io:
+              - 'argo-cd-readthedocs-io/**'
+              - '.github/workflows/build-offline-docs.yml'
+            fluxcd_io:
+              - 'fluxcd-io/**'
+              - '.github/workflows/build-offline-docs.yml'
+            docs_ceph_com:
+              - 'docs-ceph-com/**'
+              - '.github/workflows/build-offline-docs.yml'
+            helm_sh:
+              - 'helm-sh/**'
+              - '.github/workflows/build-offline-docs.yml'
+            istio_io:
+              - 'istio-io/**'
+              - '.github/workflows/build-offline-docs.yml'
+            rabbitmq_com:
+              - 'rabbitmq-com/**'
+              - '.github/workflows/build-offline-docs.yml'
+            stackable_tech:
+              - 'stackable-tech/**'
+              - '.github/workflows/build-offline-docs.yml'
+
+
   build-kubernetes-io:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'kubernetes-io'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'kubernetes-io' ||
+      (github.event_name == 'push' && needs.changes.outputs.kubernetes_io == 'true')
+      )
     
     runs-on: ubuntu-latest
     steps:
@@ -90,11 +152,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/k8s-offline-docs:buildcache,mode=max
 
   build-tekton-dev:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'tekton-dev'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'tekton-dev' ||
+      (github.event_name == 'push' && needs.changes.outputs.tekton_dev == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -140,11 +205,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/tekton-offline-docs:buildcache,mode=max
 
   build-cert-manager-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'cert-manager-io'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'cert-manager-io' ||
+      (github.event_name == 'push' && needs.changes.outputs.cert_manager_io == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -189,11 +257,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:buildcache,mode=max
 
   build-argo-cd-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'argo-cd-readthedocs-io'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'argo-cd-readthedocs-io' ||
+      (github.event_name == 'push' && needs.changes.outputs.argo_cd_readthedocs_io == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -246,11 +317,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/argo-cd-offline-docs:buildcache,mode=max
 
   build-fluxcd-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'fluxcd-io'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'fluxcd-io' ||
+      (github.event_name == 'push' && needs.changes.outputs.fluxcd_io == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -295,11 +369,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/fluxcd-offline-docs:buildcache,mode=max
 
   build-ceph-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'docs-ceph-com'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'docs-ceph-com' ||
+      (github.event_name == 'push' && needs.changes.outputs.docs_ceph_com == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -346,11 +423,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/ceph-offline-docs:buildcache,mode=max
 
   build-helm-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'helm-sh'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'helm-sh' ||
+      (github.event_name == 'push' && needs.changes.outputs.helm_sh == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -395,11 +475,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/helm-offline-docs:buildcache,mode=max
 
   build-istio-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
-      github.event.inputs.site_to_build == 'all' || 
-      github.event.inputs.site_to_build == 'istio-io'
+      github.event.inputs.site_to_build == 'all' ||
+      github.event.inputs.site_to_build == 'istio-io' ||
+      (github.event_name == 'push' && needs.changes.outputs.istio_io == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -444,11 +527,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/istio-offline-docs:buildcache,mode=max
 
   build-rabbitmq-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' ||
-      github.event.inputs.site_to_build == 'rabbitmq-com'
+      github.event.inputs.site_to_build == 'rabbitmq-com' ||
+      (github.event_name == 'push' && needs.changes.outputs.rabbitmq_com == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
@@ -493,11 +579,14 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/rabbitmq-offline-docs:buildcache,mode=max
 
   build-stackable-docs:
+    needs: changes
     if: >
+      !cancelled() && (
       github.event_name == 'schedule' ||
-      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' ||
-      github.event.inputs.site_to_build == 'stackable-tech'
+      github.event.inputs.site_to_build == 'stackable-tech' ||
+      (github.event_name == 'push' && needs.changes.outputs.stackable_tech == 'true')
+      )
     runs-on: ubuntu-latest
     steps:
       - name: Checkout your repository
