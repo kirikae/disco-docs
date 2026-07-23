@@ -1,6 +1,8 @@
 name: Build Offline Docs
 
 on:
+  push:
+    branches: [main]
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
@@ -30,7 +32,8 @@ permissions:
 jobs:
   build-kubernetes-io:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'kubernetes-io'
     
@@ -88,7 +91,8 @@ jobs:
 
   build-tekton-dev:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'tekton-dev'
     runs-on: ubuntu-latest
@@ -137,7 +141,8 @@ jobs:
 
   build-cert-manager-docs:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'cert-manager-io'
     runs-on: ubuntu-latest
@@ -185,7 +190,8 @@ jobs:
 
   build-argo-cd-docs:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'argo-cd-readthedocs-io'
     runs-on: ubuntu-latest
@@ -241,7 +247,8 @@ jobs:
 
   build-fluxcd-docs:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'fluxcd-io'
     runs-on: ubuntu-latest
@@ -289,7 +296,8 @@ jobs:
 
   build-ceph-docs:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'docs-ceph-com'
     runs-on: ubuntu-latest
@@ -339,7 +347,8 @@ jobs:
 
   build-helm-docs:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'helm-sh'
     runs-on: ubuntu-latest
@@ -387,7 +396,8 @@ jobs:
 
   build-istio-docs:
     if: >
-      github.event_name == 'schedule' || 
+      github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' || 
       github.event.inputs.site_to_build == 'istio-io'
     runs-on: ubuntu-latest
@@ -436,6 +446,7 @@ jobs:
   build-rabbitmq-docs:
     if: >
       github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' ||
       github.event.inputs.site_to_build == 'rabbitmq-com'
     runs-on: ubuntu-latest
@@ -484,6 +495,7 @@ jobs:
   build-stackable-docs:
     if: >
       github.event_name == 'schedule' ||
+      github.event_name == 'push' ||
       github.event.inputs.site_to_build == 'all' ||
       github.event.inputs.site_to_build == 'stackable-tech'
     runs-on: ubuntu-latest
