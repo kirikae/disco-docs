@@ -1,0 +1,66 @@
+name: Build knative.dev offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'knative-dev/**'
+      - '.github/workflows/build-knative-dev.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      # Knative's docs build (hack/build.sh) stitches together multiple
+      # release branches via `mike`-less `git worktree` + external curls to
+      # sibling repos (knative/serving, knative/eventing) for API reference
+      # pages. We build a single version (the `main`/development tip) here
+      # for a simpler, more reliable first pass instead of replicating that
+      # whole pipeline.
+      - name: Checkout official Knative docs repository
+        uses: actions/checkout@v4
+        with:
+          repository: knative/docs
+          path: knative-dev/knative-docs
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd knative-dev/knative-docs
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Knative image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./knative-dev
+          file: ./knative-dev/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/knative-offline-docs:latest
+            ghcr.io/${{ env.OWNER_LC }}/knative-offline-docs:${{ env.COMMIT_SHA }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/knative-offline-docs:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/knative-offline-docs:buildcache,mode=max
