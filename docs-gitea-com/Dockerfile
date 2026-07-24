@@ -44,11 +44,18 @@ RUN pnpm exec docusaurus build --locale en-us
 # 6. Strip External Dependencies (Offline Mode)
 # Removes Google Fonts links, Google Analytics/Tag Manager, and the Plausible
 # analytics script that upstream loads via docusaurus-plugin-plausible.
+#
+# Docusaurus emits the whole <head> as a single minified line, so the script
+# body must be matched with `[^<]*` (stops at the next tag) rather than a
+# greedy `.*` — a greedy match spans past these (empty-bodied) tracker
+# scripts all the way to the LAST `</script>` on the line, which deletes the
+# real stylesheet <link> and the runtime/main bundle <script> tags that
+# follow later on the same line and breaks the site's styling/hydration.
 RUN find build -type f -name "*.html" -exec sed -i -E 's/<link[^>]*fonts.(googleapis|gstatic).com[^>]*>//g' {} + || true && \
     find build -type f -name "*.html" -exec sed -i -E 's/<link[^>]*preconnect[^>]*(google-analytics|googletagmanager|plausible)\.[^>]*>//g' {} + || true && \
-    find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*google-analytics[^>]*>.*<\/script>//g' {} + || true && \
-    find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*googletagmanager[^>]*>.*<\/script>//g' {} + || true && \
-    find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*plausible\.io[^>]*>.*<\/script>//g' {} + || true
+    find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*google-analytics[^>]*>[^<]*<\/script>//g' {} + || true && \
+    find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*googletagmanager[^>]*>[^<]*<\/script>//g' {} + || true && \
+    find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*plausible\.io[^>]*>[^<]*<\/script>//g' {} + || true
 
 # --- Stage 2: Serve the Offline Site ---
 FROM nginx:alpine
