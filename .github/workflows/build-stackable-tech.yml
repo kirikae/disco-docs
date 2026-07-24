@@ -31,27 +31,9 @@ jobs:
           COMMIT_SHA=$(git ls-remote https://github.com/stackabletech/documentation.git HEAD | cut -c1-7)
           echo "COMMIT_SHA=${COMMIT_SHA}" >> $GITHUB_ENV
 
-          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
-          echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push Stackable image
-        uses: docker/build-push-action@v5
-        with:
+          image: stackable-offline-docs
           context: ./stackable-tech
-          file: ./stackable-tech/Dockerfile
-          push: true
-          tags: |
-            ghcr.io/${{ env.OWNER_LC }}/stackable-offline-docs:latest
-            ghcr.io/${{ env.OWNER_LC }}/stackable-offline-docs:${{ env.COMMIT_SHA }}
-          cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/stackable-offline-docs:buildcache
-          cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/stackable-offline-docs:buildcache,mode=max
+          version-tag: ${{ env.COMMIT_SHA }}
