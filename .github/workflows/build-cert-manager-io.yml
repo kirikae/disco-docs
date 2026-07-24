@@ -1,0 +1,60 @@
+name: Build cert-manager.io offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cert-manager-io/**'
+      - '.github/workflows/build-cert-manager-io.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official cert-manager website repository
+        uses: actions/checkout@v4
+        with:
+          repository: cert-manager/website
+          path: cert-manager-io/cert-manager-website # Updated path
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd cert-manager-io/cert-manager-website # Updated path
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push cert-manager image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./cert-manager-io # Updated context
+          file: ./cert-manager-io/Dockerfile # Updated path
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:latest
+            ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:${{ env.COMMIT_SHA }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/cert-manager-offline-docs:buildcache,mode=max
