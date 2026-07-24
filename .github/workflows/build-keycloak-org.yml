@@ -1,0 +1,88 @@
+name: Build keycloak.org offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'keycloak-org/**'
+      - '.github/workflows/build-keycloak-org.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      # keycloak.org's *website* (keycloak/keycloak-web) is a bespoke
+      # FreeMarker/Node builder that pulls already-released guide artifacts
+      # from Maven Central. The actual documentation *content* -- Server
+      # Admin, Operator, Securing Applications, Getting Started, High
+      # Availability, Observability, Migration, UI Customization, Admin REST
+      # API -- lives as AsciiDoc under keycloak/keycloak's `docs/guides`
+      # module, so we build straight from source there instead.
+      - name: Checkout official Keycloak repository (main, for tag discovery)
+        uses: actions/checkout@v4
+        with:
+          repository: keycloak/keycloak
+          path: keycloak-org/keycloak-repo
+          fetch-depth: 1
+
+      - name: Detect latest stable Keycloak release tag
+        id: prep
+        run: |
+          cd keycloak-org/keycloak-repo
+          KC_VERSION=$(git ls-remote --tags https://github.com/keycloak/keycloak.git \
+            | grep -oE 'refs/tags/[0-9]+\.[0-9]+\.[0-9]+$' \
+            | sed 's|refs/tags/||' \
+            | sort -V | tail -n1)
+          echo "Building docs for Keycloak release: $KC_VERSION"
+          echo "KC_VERSION=$KC_VERSION" >> $GITHUB_ENV
+
+          OWNER_LC=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "OWNER_LC=${OWNER_LC}" >> $GITHUB_ENV
+
+      # Re-checkout at the detected release tag (the first checkout only
+      # exists to discover it, matching the dynamic-version pattern used by
+      # the Kubernetes/Argo CD jobs above).
+      - name: Checkout Keycloak repository at detected release tag
+        uses: actions/checkout@v4
+        with:
+          repository: keycloak/keycloak
+          path: keycloak-org/keycloak-repo
+          ref: ${{ env.KC_VERSION }}
+          fetch-depth: 1
+
+      - name: Record commit SHA for image tag
+        run: |
+          cd keycloak-org/keycloak-repo
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Keycloak image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./keycloak-org
+          file: ./keycloak-org/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/${{ env.OWNER_LC }}/keycloak-offline-docs:latest
+            ghcr.io/${{ env.OWNER_LC }}/keycloak-offline-docs:${{ env.COMMIT_SHA }}
+          cache-from: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/keycloak-offline-docs:buildcache
+          cache-to: type=registry,ref=ghcr.io/${{ env.OWNER_LC }}/keycloak-offline-docs:buildcache,mode=max
