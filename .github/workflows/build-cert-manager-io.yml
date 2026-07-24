@@ -1,0 +1,42 @@
+name: Build cert-manager.io offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'cert-manager-io/**'
+      - '.github/workflows/build-cert-manager-io.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official cert-manager website repository
+        uses: actions/checkout@v4
+        with:
+          repository: cert-manager/website
+          path: cert-manager-io/cert-manager-website # Updated path
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd cert-manager-io/cert-manager-website # Updated path
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
+        with:
+          image: cert-manager-offline-docs
+          context: ./cert-manager-io
+          version-tag: ${{ env.COMMIT_SHA }}

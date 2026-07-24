@@ -1,0 +1,39 @@
+name: Build stackable.tech offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'stackable-tech/**'
+      - '.github/workflows/build-stackable-tech.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      # The Stackable docs are a multi-version Antora site built from every
+      # release branch + recursive submodules, so the Dockerfile clones the
+      # upstream repo itself rather than relying on a shallow CI checkout. We
+      # only need the tip commit here to tag the image.
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          COMMIT_SHA=$(git ls-remote https://github.com/stackabletech/documentation.git HEAD | cut -c1-7)
+          echo "COMMIT_SHA=${COMMIT_SHA}" >> $GITHUB_ENV
+
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
+        with:
+          image: stackable-offline-docs
+          context: ./stackable-tech
+          version-tag: ${{ env.COMMIT_SHA }}

@@ -1,0 +1,50 @@
+name: Build kubernetes.io offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kubernetes-io/**'
+      - '.github/workflows/build-kubernetes-io.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official Kubernetes website repository
+        uses: actions/checkout@v4
+        with:
+          repository: kubernetes/website
+          path: kubernetes-io/k8s-website
+          submodules: true
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd kubernetes-io/k8s-website
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+          DETECTED_VERSIONS=$(git ls-remote --heads origin | grep -o 'refs/heads/release-1\.[0-9]*' | sed 's|refs/heads/||' | sort -uV | tail -n 5 | tr '\n' ' ' | xargs)
+
+          echo "Detected versions to build: $DETECTED_VERSIONS"
+          echo "OLD_VERSIONS=$DETECTED_VERSIONS" >> $GITHUB_ENV
+
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
+        with:
+          image: k8s-offline-docs
+          context: ./kubernetes-io
+          version-tag: ${{ env.COMMIT_SHA }}
+          build-args: |
+            OLD_VERSIONS=${{ env.OLD_VERSIONS }}

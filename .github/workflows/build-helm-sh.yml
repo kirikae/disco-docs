@@ -1,0 +1,42 @@
+name: Build helm.sh offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'helm-sh/**'
+      - '.github/workflows/build-helm-sh.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official Helm website repository
+        uses: actions/checkout@v4
+        with:
+          repository: helm/helm-www
+          path: helm-sh/helm-www
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd helm-sh/helm-www
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
+        with:
+          image: helm-offline-docs
+          context: ./helm-sh
+          version-tag: ${{ env.COMMIT_SHA }}

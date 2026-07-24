@@ -1,0 +1,43 @@
+name: Build tekton.dev offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'tekton-dev/**'
+      - '.github/workflows/build-tekton-dev.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official Tekton website repository
+        uses: actions/checkout@v4
+        with:
+          repository: tektoncd/website
+          path: tekton-dev/tekton-website
+          submodules: true
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd tekton-dev/tekton-website
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
+        with:
+          image: tekton-offline-docs
+          context: ./tekton-dev
+          version-tag: ${{ env.COMMIT_SHA }}
