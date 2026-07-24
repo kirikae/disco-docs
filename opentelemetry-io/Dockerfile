@@ -21,9 +21,10 @@ COPY opentelemetry-website/ .
 # Vendor jQuery, which the Docsy theme loads from code.jquery.com. The
 # fetched file is byte-identical to what the CDN serves (same pinned
 # version), so the existing SRI hash still matches after repointing the src.
+# This image has neither wget nor curl, so fetch via Node's built-in fetch().
 RUN mkdir -p static/js && \
     for jq in $(grep -rhoE 'https://code\.jquery\.com/jquery-[0-9.]+\.min\.js' themes/docsy/theme/layouts | sort -u); do \
-      wget -qO "static/js/$(basename "$jq")" "$jq"; \
+      node -e "fetch(process.argv[1]).then(r=>r.arrayBuffer()).then(b=>require('fs').writeFileSync(process.argv[2], Buffer.from(b)))" "$jq" "static/js/$(basename "$jq")"; \
     done && \
     find themes/docsy/theme/layouts -type f -name "*.html" \
       -exec sed -i -E 's#https://code\.jquery\.com/(jquery-[0-9.]+\.min\.js)#/js/\1#g' {} +
