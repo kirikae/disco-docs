@@ -17,8 +17,8 @@ RUN apt-get update && apt-get install -y \
 
 RUN git config --global --add safe.directory '*'
 
-# Copy the Prometheus docs website source (checked out by CI, see the
-# build-prometheus-docs job in build-offline-docs.yml).
+# Copy the Prometheus docs website source (checked out by CI, see
+# .github/workflows/build-prometheus-io.yml).
 COPY prometheus-docs/ .
 
 # Optional: a GitHub token to raise the GitHub API rate limit (60 req/hour
