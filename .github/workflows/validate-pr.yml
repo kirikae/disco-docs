@@ -1,0 +1,156 @@
+name: Validate pull request
+
+# Build-free PR validation.
+#
+# The per-site build workflows deliberately only run on push to main and on
+# their daily schedule: a full docs build is minutes of CI per site, and there
+# are dozens of sites. That left PRs with no checks at all, so a broken
+# Dockerfile or nginx config was only discovered after merging.
+#
+# This workflow closes that gap cheaply. It validates *statically* whatever a
+# PR touches -- and only what it touches -- in seconds rather than minutes. It
+# never builds or pushes an image, so a PR still can't prove the docs build
+# succeeds; that remains the job of the post-merge build.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  detect-changes:
+    name: Detect what changed
+    runs-on: ubuntu-latest
+    outputs:
+      sites: ${{ steps.detect.outputs.sites }}
+      workflows: ${{ steps.detect.outputs.workflows }}
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+        with:
+          # Full history so the PR's merge base is resolvable below.
+          fetch-depth: 0
+
+      - name: Detect changed site directories
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+
+          changed=$(git diff --name-only "${BASE_SHA}...${HEAD_SHA}")
+          echo "Changed files:"
+          echo "${changed}" | awk '{ print "  " $0 }'
+
+          # A "site" is a top-level directory containing a Dockerfile -- that's
+          # the unit each build workflow builds. Consider only directories this
+          # PR touched that still have a Dockerfile at the head commit, so a PR
+          # that deletes or renames a site doesn't fail trying to validate it.
+          sites=$(
+            echo "${changed}" \
+              | awk -F/ 'NF > 1 { print $1 }' \
+              | sort -u \
+              | while read -r dir; do
+                  case "${dir}" in .*) continue ;; esac
+                  if [ -f "${dir}/Dockerfile" ]; then echo "${dir}"; fi
+                done \
+              | jq -R -s -c 'split("\n") | map(select(length > 0))'
+          )
+          echo "sites=${sites}" >> "${GITHUB_OUTPUT}"
+          echo "Sites to validate: ${sites}"
+
+          if echo "${changed}" | grep -q '^\.github/'; then
+            echo "workflows=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "workflows=false" >> "${GITHUB_OUTPUT}"
+          fi
+
+  validate-site:
+    name: Validate ${{ matrix.site }}
+    needs: detect-changes
+    if: needs.detect-changes.outputs.sites != '[]' && needs.detect-changes.outputs.sites != ''
+    runs-on: ubuntu-latest
+    strategy:
+      # One broken site shouldn't mask the state of the others.
+      fail-fast: false
+      matrix:
+        site: ${{ fromJSON(needs.detect-changes.outputs.sites) }}
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # `--check` runs the Dockerfile through the frontend's parser and linter
+      # and resolves every base image, without executing a single build step.
+      # Catches syntax errors, unresolvable/typo'd FROM tags and lint rule
+      # violations in a few seconds.
+      - name: Check Dockerfile
+        env:
+          SITE: ${{ matrix.site }}
+        run: docker buildx build --check "./${SITE}"
+
+      - name: Check nginx config
+        env:
+          SITE: ${{ matrix.site }}
+        run: |
+          set -euo pipefail
+
+          conf="${SITE}/default.conf"
+          if [ ! -f "${conf}" ]; then
+            echo "::error::${conf} is missing -- every site serves its built docs through nginx."
+            exit 1
+          fi
+
+          # Mount the config where the nginx image's stock nginx.conf includes
+          # it from, so `nginx -t` validates it in the same shape it's used in.
+          docker run --rm \
+            -v "${PWD}/${conf}:/etc/nginx/conf.d/default.conf:ro" \
+            nginx:alpine nginx -t
+
+      # Guards against adding a site directory but forgetting to wire up the
+      # workflow that builds it -- which would otherwise fail silently, since
+      # a site nothing builds simply never produces an image.
+      - name: Check the site is wired into a build workflow
+        env:
+          SITE: ${{ matrix.site }}
+        run: |
+          set -euo pipefail
+
+          if ! grep -rqF "context: ./${SITE}" .github/workflows/; then
+            echo "::error::No workflow in .github/workflows builds ./${SITE}."
+            echo "::error::Add a build-${SITE}.yml modelled on an existing per-site workflow."
+            exit 1
+          fi
+
+  validate-workflows:
+    name: Lint workflows
+    needs: detect-changes
+    if: needs.detect-changes.outputs.workflows == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      # actionlint validates workflow schema, expressions and -- most usefully
+      # here -- the inputs passed to the shared build-and-push composite
+      # action, so a typo'd or missing input fails the PR instead of the build.
+      #
+      # shellcheck integration is off: on this repo it only reports pre-existing
+      # SC2086 style hits on the `... >> $GITHUB_ENV` lines that every site
+      # workflow uses, which would make the check permanently red.
+      - name: Run actionlint
+        run: |
+          set -euo pipefail
+
+          docker run --rm \
+            -v "${PWD}:/repo:ro" \
+            -w /repo \
+            rhysd/actionlint:1.7.12 -shellcheck= -color
