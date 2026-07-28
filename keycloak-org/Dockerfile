@@ -32,7 +32,7 @@ RUN git config --global --add safe.directory '*'
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=true
 
 # CI checks out keycloak/keycloak (pinned to the latest stable release tag)
-# into keycloak-repo/; see build-offline-docs.yml.
+# into keycloak-repo/; see build-keycloak-org.yml.
 COPY keycloak-repo/ .
 
 # Build only what docs/guides needs (and its reactor dependencies), skipping
