@@ -13,6 +13,10 @@ on:
 permissions:
   contents: read
   packages: write
+  # Mints the OIDC token cosign exchanges for a Fulcio signing
+  # certificate, which is what binds the keyless signature to this
+  # repository and workflow. Without it the signing step fails.
+  id-token: write
 
 jobs:
   build:
@@ -40,3 +44,7 @@ jobs:
           image: cert-manager-offline-docs
           context: ./cert-manager-io
           version-tag: ${{ env.COMMIT_SHA }}
+          # Optional second, key-based signature; the build still
+          # succeeds (keyless only) when these are not set.
+          cosign-private-key: ${{ secrets.COSIGN_PRIVATE_KEY }}
+          cosign-password: ${{ secrets.COSIGN_PASSWORD }}

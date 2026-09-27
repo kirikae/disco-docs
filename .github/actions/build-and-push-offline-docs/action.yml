@@ -1,8 +1,8 @@
 name: Build and push offline docs image
 description: >
   Shared tail for the offline-docs site builds: set up Buildx, log in to GHCR,
-  and build+push the site image with the standard :latest and :<version> tags
-  plus registry-backed BuildKit cache.
+  build+push the site image with the standard :latest and :<version> tags plus
+  registry-backed BuildKit cache, and sign the pushed manifest with cosign.
 inputs:
   image:
     description: Image name under ghcr.io/<owner>/ (e.g. "istio-offline-docs").
@@ -21,6 +21,28 @@ inputs:
     description: Optional newline-separated BuildKit secrets (id=VALUE) forwarded to docker build.
     required: false
     default: ""
+  cosign-private-key:
+    description: >
+      Optional cosign private key (the contents of cosign.key) used for the
+      second, key-based signature. Callers pass secrets.COSIGN_PRIVATE_KEY.
+      When empty, only the keyless signature is made, so builds keep working
+      before the key exists. See README.md for generating and storing it.
+    required: false
+    default: ""
+  cosign-password:
+    description: >
+      Passphrase for cosign-private-key. Callers pass secrets.COSIGN_PASSWORD.
+      Required (possibly as an empty string) whenever cosign-private-key is set.
+    required: false
+    default: ""
+  cosign-version:
+    description: cosign release to install, pinned so a signing behaviour change never arrives unannounced.
+    required: false
+    default: v3.1.3
+outputs:
+  digest:
+    description: Digest of the pushed manifest, which is what the signatures are made over.
+    value: ${{ steps.build.outputs.digest }}
 runs:
   using: composite
   steps:
@@ -37,6 +59,7 @@ runs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
     - name: Build and push image
+      id: build
       uses: docker/build-push-action@v5
       with:
         context: ${{ inputs.context }}
@@ -48,3 +71,104 @@ runs:
           ghcr.io/${{ steps.owner.outputs.owner }}/${{ inputs.image }}:${{ inputs.version-tag }}
         cache-from: type=registry,ref=ghcr.io/${{ steps.owner.outputs.owner }}/${{ inputs.image }}:buildcache
         cache-to: type=registry,ref=ghcr.io/${{ steps.owner.outputs.owner }}/${{ inputs.image }}:buildcache,mode=max
+
+    # --- Signing ---
+    #
+    # Everything below signs the *digest*, never a tag. :latest is reattached on
+    # every nightly build, so a tag-scoped signature would go stale the moment
+    # the next build runs; a digest names exactly these bytes forever. Both tags
+    # pushed above point at this one manifest, so one signature covers both.
+    #
+    # Two signatures are made, because they answer different questions:
+    #
+    #   Keyless (Sigstore/Fulcio, via the Actions OIDC token) proves *what built
+    #   the image* -- the certificate records this repository, workflow and
+    #   commit, and the signature is recorded in the public Rekor transparency
+    #   log. There is no key to store, leak or rotate. Verifying it means
+    #   asserting an identity, so it needs Sigstore's roots and is most natural
+    #   online.
+    #
+    #   Key-based proves *that the holder of our key released it*. It carries no
+    #   build provenance, but it verifies against a single public key file with
+    #   no Sigstore infrastructure involved, which is what makes it usable inside
+    #   a disconnected environment -- the whole point of the images in this repo.
+    #
+    # README.md documents the verification commands for both, including the
+    # airgapped path.
+    - name: Install cosign
+      uses: sigstore/cosign-installer@v3
+      with:
+        cosign-release: ${{ inputs.cosign-version }}
+
+    - name: Sign the image (keyless, Sigstore OIDC)
+      shell: bash
+      env:
+        # Nothing authenticates here beyond the docker/login-action credentials
+        # already in the runner's registry config plus the workflow's OIDC token,
+        # which is why the calling workflow needs `id-token: write`.
+        IMAGE_DIGEST: ghcr.io/${{ steps.owner.outputs.owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+      run: |
+        set -euo pipefail
+        cosign sign --yes --bundle "${RUNNER_TEMP}/keyless.bundle" "${IMAGE_DIGEST}"
+
+    - name: Sign the image (key pair)
+      if: inputs.cosign-private-key != ''
+      shell: bash
+      env:
+        # Passed via env:// rather than a file so the key is never written to the
+        # runner's disk. It arrives here as a secret, so Actions keeps masking it.
+        COSIGN_PRIVATE_KEY: ${{ inputs.cosign-private-key }}
+        COSIGN_PASSWORD: ${{ inputs.cosign-password }}
+        IMAGE_DIGEST: ghcr.io/${{ steps.owner.outputs.owner }}/${{ inputs.image }}@${{ steps.build.outputs.digest }}
+      run: |
+        set -euo pipefail
+        cosign sign --yes --key env://COSIGN_PRIVATE_KEY \
+          --bundle "${RUNNER_TEMP}/keyed.bundle" "${IMAGE_DIGEST}"
+
+    # Both signatures live in GHCR next to the image (as a sha256-<digest>.sig
+    # tag) and that is what `cosign verify` reads, so these bundles are not
+    # required for verification -- `cosign save` carries the signatures along
+    # with the image, which is the documented way to verify inside an airgap.
+    # They are kept as a small, immutable per-run record of what this build
+    # signed, useful when reconstructing after the fact which digest a given
+    # workflow run published.
+    - name: Upload signature bundles
+      uses: actions/upload-artifact@v4
+      with:
+        name: cosign-bundles-${{ inputs.image }}-${{ inputs.version-tag }}
+        path: ${{ runner.temp }}/*.bundle
+        if-no-files-found: error
+        retention-days: 30
+
+    # Puts the digest and a ready-to-paste verify command on the run's summary
+    # page. Without this, recovering which digest a past nightly build published
+    # means digging through the build log.
+    - name: Summarise what was signed
+      shell: bash
+      env:
+        # Every value arrives through env rather than being interpolated into the
+        # script body, so nothing from a context can be parsed as shell.
+        IMAGE: ghcr.io/${{ steps.owner.outputs.owner }}/${{ inputs.image }}
+        DIGEST: ${{ steps.build.outputs.digest }}
+        VERSION_TAG: ${{ inputs.version-tag }}
+        REPO: ${{ github.repository }}
+        KEYED: ${{ inputs.cosign-private-key != '' && 'yes' || 'no -- COSIGN_PRIVATE_KEY secret is not set' }}
+      run: |
+        set -euo pipefail
+        {
+          echo "### ${IMAGE}"
+          echo
+          echo "| | |"
+          echo "|---|---|"
+          echo "| Digest | \`${DIGEST}\` |"
+          echo "| Tags | \`latest\`, \`${VERSION_TAG}\` |"
+          echo "| Keyless signature | yes |"
+          echo "| Key-pair signature | ${KEYED} |"
+          echo
+          echo '```'
+          echo "cosign verify \\"
+          echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\"
+          echo "  --certificate-identity-regexp '^https://github.com/${REPO}/' \\"
+          echo "  ${IMAGE}@${DIGEST}"
+          echo '```'
+        } >> "${GITHUB_STEP_SUMMARY}"
