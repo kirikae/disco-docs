@@ -128,6 +128,39 @@ the docs, then `COPY` the output into the hardened nginx image), a
 signing, and needs `id-token: write` in the calling workflow's `permissions` for
 the keyless signature.
 
+Copy the whole trigger block from an existing site workflow, not just the `push`
+half. Each site workflow also runs on `pull_request` — filtered to its own paths —
+and passes `publish: ${{ github.event_name != 'pull_request' }}` to the shared
+action. On a PR that builds the image, smoke-tests that it serves on 8080 as UID
+65532, and discards it: nothing is pushed, cached or signed. On `main` and on the
+nightly schedule the same call publishes and signs. `validate-pr.yml` fails a PR
+that adds a site workflow without both halves, so a new site cannot land
+un-built or, worse, publishing from a PR.
+
+## CI on a pull request
+
+Two signals, deliberately split by cost:
+
+- **`validate-pr.yml`** — seconds. Static checks on whatever the PR touches:
+  Dockerfile lint and base-image resolution, `nginx -t` against the real runtime
+  image, the hardened-runtime invariants (correct base, no `RUN`/`CMD` in the
+  final stage, `listen 8080`), workflow wiring, and `actionlint`. These name the
+  exact rule that broke, which a build failure usually does not.
+- **The per-site build workflows** — minutes. A real `docker build` of each
+  affected site plus a smoke test, with publishing switched off.
+
+A change to the shared action touches no site directory, so nothing would build
+it on a PR. `metallb-io` therefore also watches
+`.github/actions/build-and-push-offline-docs/**` and acts as the canary — it is
+the cheapest site to build, and what is being exercised is the action rather than
+anything site-specific. The action installs cosign and runs `cosign version` even
+when not publishing, because a broken cosign install is exactly the kind of
+failure that used to reach `main`.
+
+PR builds reuse the published `:buildcache`, so most layers are cache hits. A PR
+from a fork gets a read-only token and may not be able to read that cache; the
+build still runs, it is just slower.
+
 The overriding rule for the build itself: **the served site must make no network
 requests**. Fonts, scripts, icon sprites, emoji images, analytics and avatars all
 get mirrored into the image and the markup repointed at the local copies. Each

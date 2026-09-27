@@ -6,6 +6,14 @@ on:
     paths:
       - 'stackable-tech/**'
       - '.github/workflows/build-stackable-tech.yml'
+
+  # Build on PRs that touch this site, but never publish -- the action is
+  # passed publish: false below. Catches a broken build before merge instead
+  # of after it, when only the nightly run would have found it.
+  pull_request:
+    paths:
+      - 'stackable-tech/**'
+      - '.github/workflows/build-stackable-tech.yml'
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch: {}
@@ -17,6 +25,13 @@ permissions:
   # certificate, which is what binds the keyless signature to this
   # repository and workflow. Without it the signing step fails.
   id-token: write
+
+concurrency:
+  # A PR build is minutes of CI per site, so let a newer push to the same
+  # branch cancel the previous run. Publishing runs are never cancelled: on
+  # main and on the nightly schedule each one must finish and sign.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -41,6 +56,9 @@ jobs:
           image: stackable-offline-docs
           context: ./stackable-tech
           version-tag: ${{ env.COMMIT_SHA }}
+          # A pull_request build proves the image builds and serves; only
+          # main and the schedule publish and sign it.
+          publish: ${{ github.event_name != 'pull_request' }}
           # Optional second, key-based signature; the build still
           # succeeds (keyless only) when these are not set.
           cosign-private-key: ${{ secrets.COSIGN_PRIVATE_KEY }}

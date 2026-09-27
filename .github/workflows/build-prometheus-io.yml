@@ -6,6 +6,14 @@ on:
     paths:
       - 'prometheus-io/**'
       - '.github/workflows/build-prometheus-io.yml'
+
+  # Build on PRs that touch this site, but never publish -- the action is
+  # passed publish: false below. Catches a broken build before merge instead
+  # of after it, when only the nightly run would have found it.
+  pull_request:
+    paths:
+      - 'prometheus-io/**'
+      - '.github/workflows/build-prometheus-io.yml'
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch: {}
@@ -17,6 +25,13 @@ permissions:
   # certificate, which is what binds the keyless signature to this
   # repository and workflow. Without it the signing step fails.
   id-token: write
+
+concurrency:
+  # A PR build is minutes of CI per site, so let a newer push to the same
+  # branch cancel the previous run. Publishing runs are never cancelled: on
+  # main and on the nightly schedule each one must finish and sign.
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
@@ -44,6 +59,9 @@ jobs:
           image: prometheus-offline-docs
           context: ./prometheus-io
           version-tag: ${{ env.COMMIT_SHA }}
+          # A pull_request build proves the image builds and serves; only
+          # main and the schedule publish and sign it.
+          publish: ${{ github.event_name != 'pull_request' }}
           # The build's pre-build scripts fetch versioned docs and release
           # metadata for the Prometheus/Alertmanager/exporter repos from the
           # GitHub API; passing a token raises the rate limit for this from
