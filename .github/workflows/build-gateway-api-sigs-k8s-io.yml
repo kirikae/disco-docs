@@ -1,0 +1,48 @@
+name: Build gateway-api.sigs.k8s.io offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'gateway-api-sigs-k8s-io/**'
+      - '.github/workflows/build-gateway-api-sigs-k8s-io.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      - name: Checkout official gateway-api repository
+        uses: actions/checkout@v4
+        with:
+          repository: kubernetes-sigs/gateway-api
+          path: gateway-api-sigs-k8s-io/gateway-api-src
+          fetch-depth: 1
+          # The API reference generator fetches the release-* branches during the
+          # image build. It is given the upstream URL explicitly, so it needs no
+          # credentials -- and leaving them out keeps the token that
+          # actions/checkout would otherwise write into .git/config from being
+          # copied into the build context and cached in the registry.
+          persist-credentials: false
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          cd gateway-api-sigs-k8s-io/gateway-api-src
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
+        with:
+          image: gateway-api-offline-docs
+          context: ./gateway-api-sigs-k8s-io
+          version-tag: ${{ env.COMMIT_SHA }}

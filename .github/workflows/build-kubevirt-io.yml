@@ -1,0 +1,56 @@
+name: Build kubevirt.io offline docs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'kubevirt-io/**'
+      - '.github/workflows/build-kubevirt-io.yml'
+  schedule:
+    - cron: '0 0 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout your repository
+        uses: actions/checkout@v4
+
+      # kubevirt.io is assembled from two upstream repositories: the Jekyll site
+      # serves / and the MkDocs user guide serves /user-guide/. See the site's
+      # Dockerfile for why both are needed.
+      - name: Checkout official kubevirt.io website repository
+        uses: actions/checkout@v4
+        with:
+          repository: kubevirt/kubevirt.github.io
+          path: kubevirt-io/kubevirt-src
+          fetch-depth: 1
+
+      - name: Checkout official KubeVirt user guide repository
+        uses: actions/checkout@v4
+        with:
+          repository: kubevirt/user-guide
+          path: kubevirt-io/kubevirt-user-guide-src
+          fetch-depth: 1
+
+      - name: Prepare tags and environment
+        id: prep
+        run: |
+          # The image is tagged with the website commit; the user guide's own
+          # commit is recorded alongside it so a build is traceable to both.
+          cd kubevirt-io/kubevirt-src
+          echo "COMMIT_SHA=$(git rev-parse --short HEAD)" >> $GITHUB_ENV
+          cd ../kubevirt-user-guide-src
+          echo "User guide commit: $(git rev-parse --short HEAD)"
+
+      - name: Build and push
+        uses: ./.github/actions/build-and-push-offline-docs
+        with:
+          image: kubevirt-offline-docs
+          context: ./kubevirt-io
+          version-tag: ${{ env.COMMIT_SHA }}
