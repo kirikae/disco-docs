@@ -33,14 +33,13 @@ RUN yarn build --locale en
 RUN find build -type f -name "*.html" -exec sed -i -E 's/<link[^>]*fonts.(googleapis|gstatic).com[^>]*>//g' {} + || true && \
     find build -type f -name "*.html" -exec sed -i -E 's/<script[^>]*google-analytics[^>]*>.*<\/script>//g' {} + || true
 
-# --- Stage 2: Serve the Offline Site ---
 # The hardened nginx image serves as UID 65532, which can only read
 # world-readable content. Nothing above guarantees that, so sweep the
 # output: a+rX adds read for everyone and traverse on directories only,
 # without marking regular files executable.
 RUN chmod -R a+rX /app/build
 
-# --- Serve the Offline Site ---
+# --- Stage 2: Serve the Offline Site ---
 # Red Hat Hardened Images nginx: distroless (no shell, no package manager) and
 # runs as UID 65532, so this stage listens on 8080 (see default.conf), can RUN
 # nothing, and must not set a CMD -- the image's own CMD carries the flags nginx

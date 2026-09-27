@@ -106,7 +106,6 @@ RUN mkdir -p /out/chunk_old_1 /out/chunk_old_2 /out/chunk_old_3 \
 # without marking regular files executable.
 RUN chmod -R a+rX /out
 
-# --- Serve the Offline Site ---
 # Red Hat Hardened Images nginx: distroless (no shell, no package manager) and
 # runs as UID 65532, so this stage listens on 8080 (see default.conf), can RUN
 # nothing, and must not set a CMD -- the image's own CMD carries the flags nginx
