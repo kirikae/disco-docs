@@ -1,16 +1,22 @@
 name: Validate pull request
 
-# Build-free PR validation.
+# Fast, build-free PR validation.
 #
-# The per-site build workflows deliberately only run on push to main and on
-# their daily schedule: a full docs build is minutes of CI per site, and there
-# are dozens of sites. That left PRs with no checks at all, so a broken
-# Dockerfile or nginx config was only discovered after merging.
+# This is the first of two PR signals, and the cheap one: it validates
+# *statically* whatever a PR touches -- and only what it touches -- in seconds.
+# Dockerfile syntax and base images, the nginx config, the hardened-runtime
+# invariants, workflow lint.
 #
-# This workflow closes that gap cheaply. It validates *statically* whatever a
-# PR touches -- and only what it touches -- in seconds rather than minutes. It
-# never builds or pushes an image, so a PR still can't prove the docs build
-# succeeds; that remains the job of the post-merge build.
+# The second signal is the real build. Each per-site build workflow now also runs
+# on pull_request, filtered to its own paths, and passes publish: false to the
+# shared action -- so a PR builds the image, smoke-tests that it serves, and
+# throws it away without pushing or signing anything. That is minutes of CI per
+# affected site rather than seconds, which is why it stayed out of this workflow:
+# these checks should keep failing fast on the obvious mistakes.
+#
+# Between them, a PR now proves the docs actually build before it merges. The
+# checks here remain worth having because they name the specific rule that was
+# broken, which a build failure often does not.
 
 on:
   pull_request:
@@ -187,6 +193,23 @@ jobs:
             # step runs, minutes into a push to main.
             if ! grep -q 'id-token: write' "${f}"; then
               echo "::error file=${f}::Missing 'id-token: write' under permissions; cosign cannot mint a keyless signing certificate without it."
+              rc=1
+            fi
+            # Without a pull_request trigger the site is never built before a
+            # merge, which is the gap this whole workflow exists to close.
+            if ! grep -qE '^  pull_request:' "${f}"; then
+              echo "::error file=${f}::No 'pull_request:' trigger, so this site is never built on a PR. Copy the trigger from an existing site workflow."
+              rc=1
+            fi
+            # ...and with the trigger but without the gate, a PR would publish
+            # and sign an image built from unreviewed code.
+            #
+            # Matched without writing the expression delimiters literally: an
+            # Actions expression inside a run: block is interpolated before bash
+            # sees it, so a pattern containing them would silently become a search
+            # for "publish: false" and pass for the wrong reason.
+            if ! grep -qE "publish:.*github\.event_name != 'pull_request'" "${f}"; then
+              echo "::error file=${f}::Does not gate publishing on the event. Pass publish: (github.event_name != 'pull_request') to the build action, or a PR build would push and sign."
               rc=1
             fi
             # Composite actions cannot read the secrets context, so each caller
