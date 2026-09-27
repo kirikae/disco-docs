@@ -43,7 +43,21 @@ RUN find . -path './node_modules' -prune -o -path './.git' -prune -o \
       -type f \( -name "*.html" -o -name "*.js" \) -print0 \
       | xargs -0 sed -i -e 's/ integrity="sha[0-9]*-[^"]*"//g' -e 's/ crossorigin="anonymous"//g'
 
-# 2. Install npm dependencies. This also runs the project's own "prepare"
+# 2a. Upgrade npm before installing.
+#
+# The base image is chosen for its pinned Hugo, and the Node/npm pair it happens
+# to bundle is whatever that image shipped with -- currently node v26.4.0 with
+# npm 11.17.0. Upstream's package.json declares engines.npm ">=11.18.0" and the
+# repo sets engine-strict, so that bundled npm fails the install outright with
+# EBADENGINE rather than warning. Node itself is fine (>=24 required).
+#
+# Pinned rather than `npm@latest` so a build is reproducible, and kept as an ARG
+# so raising it is a one-line change when upstream raises its floor again.
+ARG NPM_VERSION=11.19.1
+RUN npm install -g "npm@${NPM_VERSION}" && \
+    echo "npm $(npm -v) / node $(node -v)"
+
+# 2b. Install npm dependencies. This also runs the project's own "prepare"
 # lifecycle script (git submodule update --init + the Docsy theme's own
 # postinstall), which is a no-op for the submodules since they're already
 # checked out at the pinned commits above.
