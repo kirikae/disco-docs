@@ -170,6 +170,15 @@ the references hide in places a quick grep misses (minified attributes without
 quotes, ESM `import` URLs inside inline scripts, and scripts assembled at runtime
 by `createElement`).
 
-## TODO
+## Open decisions
 
-Look into using `chunkah` tom maximise container image layer reuse: github.com/coreos/chunkah
+Investigated, not yet decided — see [DECISIONS.md](DECISIONS.md) for the evidence
+behind each:
+
+- **`chunkah` for content-based image layers.** Would cut nightly blob churn
+  substantially (measured: a site's largest layer 212 MiB → 26 MiB, with 61% of it
+  becoming frozen), but does nothing for image size or build speed, and needs the
+  publish build moved from buildx to buildah.
+- **Extending the `try_files` fix** that removes a misleading 403 on index-less
+  directories to the 30 sites still carrying the original pattern.
+- **Retrying the cosign install** to ride out transient GitHub asset-CDN failures.
