@@ -55,14 +55,13 @@ RUN npm install
 # generates the collector config-schema types before Hugo renders the site.
 RUN npm run build:production
 
-# --- Stage 2: Serve the Offline Site ---
 # The hardened nginx image serves as UID 65532, which can only read
 # world-readable content. Nothing above guarantees that, so sweep the
 # output: a+rX adds read for everyone and traverse on directories only,
 # without marking regular files executable.
 RUN chmod -R a+rX /app/public
 
-# --- Serve the Offline Site ---
+# --- Stage 2: Serve the Offline Site ---
 # Red Hat Hardened Images nginx: distroless (no shell, no package manager) and
 # runs as UID 65532, so this stage listens on 8080 (see default.conf), can RUN
 # nothing, and must not set a CMD -- the image's own CMD carries the flags nginx
