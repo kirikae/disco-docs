@@ -100,6 +100,7 @@ jobs:
       - name: Check nginx config
         env:
           SITE: ${{ matrix.site }}
+          RUNTIME_IMAGE: registry.access.redhat.com/hi/nginx:latest
         run: |
           set -euo pipefail
 
@@ -109,26 +110,94 @@ jobs:
             exit 1
           fi
 
-          # Mount the config where the nginx image's stock nginx.conf includes
-          # it from, so `nginx -t` validates it in the same shape it's used in.
+          # Mount the config where the runtime image's stock nginx.conf includes
+          # it from, so `nginx -t` validates it in the same shape it's used in --
+          # and validate it against the image that actually serves it, so an
+          # nginx version difference can't hide a problem until after merge. The
+          # hardened image's entrypoint is nginx itself, hence bare arguments
+          # rather than a "nginx -t" command.
           docker run --rm \
             -v "${PWD}/${conf}:/etc/nginx/conf.d/default.conf:ro" \
-            nginx:alpine nginx -t
+            "${RUNTIME_IMAGE}" -t -c /etc/nginx/nginx.conf
+
+      # The runtime image is distroless and serves as UID 65532, which rules out
+      # three things a site Dockerfile might otherwise reasonably do. Each of
+      # them fails at run time rather than build time -- a container that exits
+      # immediately, or a site that 404s every page -- so catch them statically.
+      - name: Check the site targets the hardened runtime correctly
+        env:
+          SITE: ${{ matrix.site }}
+        run: |
+          set -euo pipefail
+
+          df="${SITE}/Dockerfile"
+          conf="${SITE}/default.conf"
+          rc=0
+
+          # Everything from the last FROM onwards is the stage that ships.
+          final_stage=$(awk '/^FROM /{ buf = "" } { buf = buf $0 "\n" } END { printf "%s", buf }' "${df}")
+
+          if ! grep -q '^FROM registry\.access\.redhat\.com/hi/nginx' <<<"${final_stage}"; then
+            echo "::error file=${df}::The final stage must be FROM registry.access.redhat.com/hi/nginx:latest (the Red Hat Hardened Images nginx every site serves from)."
+            rc=1
+          fi
+
+          # No shell in the image, so a RUN here cannot execute.
+          if grep -qE '^RUN ' <<<"${final_stage}"; then
+            echo "::error file=${df}::The final stage has a RUN step, but the hardened nginx image is distroless -- there is no shell to run it. Do the work in the builder stage instead."
+            rc=1
+          fi
+
+          # The image's own CMD carries nginx's flags after its /usr/sbin/nginx
+          # entrypoint; overriding CMD replaces them and appends a stray argument.
+          if grep -qE '^CMD ' <<<"${final_stage}"; then
+            echo "::error file=${df}::The final stage sets CMD. The hardened nginx image supplies its own entrypoint and flags -- remove the CMD."
+            rc=1
+          fi
+
+          # Non-root nginx cannot bind a privileged port.
+          if ! grep -qE '^\s*listen\s+8080;' "${conf}"; then
+            echo "::error file=${conf}::Must 'listen 8080;' -- the hardened nginx image runs as UID 65532 and cannot bind port 80."
+            rc=1
+          fi
+
+          exit "${rc}"
 
       # Guards against adding a site directory but forgetting to wire up the
       # workflow that builds it -- which would otherwise fail silently, since
-      # a site nothing builds simply never produces an image.
+      # a site nothing builds simply never produces an image -- and against
+      # wiring it up in a way that publishes the image unsigned.
       - name: Check the site is wired into a build workflow
         env:
           SITE: ${{ matrix.site }}
         run: |
           set -euo pipefail
 
-          if ! grep -rqF "context: ./${SITE}" .github/workflows/; then
+          wf=$(grep -rlF "context: ./${SITE}" .github/workflows/ || true)
+          if [ -z "${wf}" ]; then
             echo "::error::No workflow in .github/workflows builds ./${SITE}."
             echo "::error::Add a build-${SITE}.yml modelled on an existing per-site workflow."
             exit 1
           fi
+
+          rc=0
+          for f in ${wf}; do
+            # The keyless signature is minted from an OIDC token the job has to
+            # be granted. Missing it does not fail the build until the signing
+            # step runs, minutes into a push to main.
+            if ! grep -q 'id-token: write' "${f}"; then
+              echo "::error file=${f}::Missing 'id-token: write' under permissions; cosign cannot mint a keyless signing certificate without it."
+              rc=1
+            fi
+            # Composite actions cannot read the secrets context, so each caller
+            # has to forward the key. Omitting it silently drops the key-pair
+            # signature -- the one that makes offline verification possible.
+            if ! grep -q 'cosign-private-key:' "${f}"; then
+              echo "::error file=${f}::Does not pass cosign-private-key/cosign-password to the build action, so the image would publish without its key-pair signature."
+              rc=1
+            fi
+          done
+          exit "${rc}"
 
   validate-workflows:
     name: Lint workflows

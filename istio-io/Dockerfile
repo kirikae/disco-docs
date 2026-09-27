@@ -32,11 +32,21 @@ RUN find layouts -type f -name "*.html" -exec sed -i -E 's/<link[^>]*fonts.(goog
 RUN hugo --minify --environment production --baseURL "/" -d /app/public
 
 # --- Stage 2: Serve the Offline Site ---
-FROM nginx:alpine
+# The hardened nginx image serves as UID 65532, which can only read
+# world-readable content. Nothing above guarantees that, so sweep the
+# output: a+rX adds read for everyone and traverse on directories only,
+# without marking regular files executable.
+RUN chmod -R a+rX /app/public
+
+# --- Serve the Offline Site ---
+# Red Hat Hardened Images nginx: distroless (no shell, no package manager) and
+# runs as UID 65532, so this stage listens on 8080 (see default.conf), can RUN
+# nothing, and must not set a CMD -- the image's own CMD carries the flags nginx
+# needs after its /usr/sbin/nginx entrypoint. See README.md for the details and
+# for how to verify the signatures on the published images.
+FROM registry.access.redhat.com/hi/nginx:latest
 
 COPY --from=builder /app/public /usr/share/nginx/html
 COPY default.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 8080

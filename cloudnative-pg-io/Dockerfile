@@ -46,8 +46,12 @@ RUN find build -type f -name "*.html" -exec sed -i -E 's#<link[^>]*fonts\.(googl
 
 RUN chmod -R 755 build
 
-FROM nginx:alpine
+# Red Hat Hardened Images nginx: distroless (no shell, no package manager) and
+# runs as UID 65532, so this stage listens on 8080 (see default.conf), can RUN
+# nothing, and must not set a CMD -- the image's own CMD carries the flags nginx
+# needs after its /usr/sbin/nginx entrypoint. See README.md for the details and
+# for how to verify the signatures on the published images.
+FROM registry.access.redhat.com/hi/nginx:latest
 COPY --from=builder /app/website/build /usr/share/nginx/html
 COPY default.conf /etc/nginx/conf.d/default.conf
-EXPOSE 80
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 8080

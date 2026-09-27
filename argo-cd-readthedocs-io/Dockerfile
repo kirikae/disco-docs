@@ -43,10 +43,17 @@ RUN git reset --hard && git clean -fdx && git checkout master && \
 
 RUN chmod -R 755 /out
 
-FROM nginx:alpine
+# Red Hat Hardened Images nginx: distroless (no shell, no package manager) and
+# runs as UID 65532, so this stage listens on 8080 (see default.conf), can RUN
+# nothing, and must not set a CMD -- the image's own CMD carries the flags nginx
+# needs after its /usr/sbin/nginx entrypoint. See README.md for the details and
+# for how to verify the signatures on the published images.
+FROM registry.access.redhat.com/hi/nginx:latest
 
-RUN rm -rf /usr/share/nginx/html/*
-
+# The nginx:alpine stage used to clear the docroot first, which this image has no
+# shell to do. It is not needed: the only file the base image ships there is its
+# own index.html, and chunk_main -- asserted non-empty in the builder stage --
+# lands its own index.html on top of it.
 COPY --from=builder /out/chunk_old_1/ /usr/share/nginx/html/
 COPY --from=builder /out/chunk_old_2/ /usr/share/nginx/html/
 COPY --from=builder /out/chunk_old_3/ /usr/share/nginx/html/
@@ -56,6 +63,4 @@ COPY --from=builder /out/chunk_main/ /usr/share/nginx/html/
 
 COPY default.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 8080

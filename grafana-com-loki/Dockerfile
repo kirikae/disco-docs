@@ -165,12 +165,26 @@ RUN test -f dist/docs/loki/latest/query/analyzer/script.js && \
 RUN test -s dist/docs/loki/latest/index.html
 
 # --- Stage 2: Serve the Offline Site ---
-FROM nginx:alpine
+# The hardened nginx image serves as UID 65532, which can only read
+# world-readable content. Nothing above guarantees that, so sweep the
+# output: a+rX adds read for everyone and traverse on directories only,
+# without marking regular files executable.
+RUN chmod -R a+rX /hugo/dist
 
-# Drop nginx's own default landing page so /index.html doesn't serve it instead
-# of a 404 (the real site index lives at /docs/loki/latest/, see default.conf).
-RUN rm -f /usr/share/nginx/html/index.html
+# --- Serve the Offline Site ---
+# Red Hat Hardened Images nginx: distroless (no shell, no package manager) and
+# runs as UID 65532, so this stage listens on 8080 (see default.conf), can RUN
+# nothing, and must not set a CMD -- the image's own CMD carries the flags nginx
+# needs after its /usr/sbin/nginx entrypoint. See README.md for the details and
+# for how to verify the signatures on the published images.
+FROM registry.access.redhat.com/hi/nginx:latest
 
+# Nothing is copied to the docroot itself, so nginx's own default landing page
+# survives at /usr/share/nginx/html/index.html -- and unlike the old
+# nginx:alpine stage, this image has no shell to delete it with. default.conf
+# handles it instead: `location = /` and `location = /index.html` both redirect
+# to the real site index, so the stock page is unreachable either way.
+#
 # Served under /docs/loki/latest/ (matching both the path Loki's own content
 # hardcodes in hrefs/aliases, and how grafana.com itself serves it) plus the
 # vendored /web/ and /media/ asset trees alongside it.
@@ -180,6 +194,4 @@ COPY --from=builder /hugo/dist/media /usr/share/nginx/html/media
 COPY --from=builder /hugo/dist/static /usr/share/nginx/html/static
 COPY default.conf /etc/nginx/conf.d/default.conf
 
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 8080

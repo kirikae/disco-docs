@@ -1,2 +1,7 @@
 kubernetes-io/k8s-website
 rabbitmq-com/rabbitmq-website
+
+# cosign signing key. Only ever lives in the COSIGN_PRIVATE_KEY repo secret;
+# cosign.pub is the half that belongs in the repo. See README.md.
+cosign.key
+*.key
