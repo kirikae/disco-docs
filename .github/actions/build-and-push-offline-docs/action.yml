@@ -132,10 +132,26 @@ runs:
           exit 1
         fi
 
-        echo "GET / -> ${code}"
-        if [ "${code}" != "200" ]; then
-          echo "::error::GET / returned ${code}, expected 200. A 403 here usually means"
-          echo "::error::the docroot is not world-readable -- check the builder stage's chmod."
+        # "/" is not always a page. A couple of sites serve their docs under the
+        # versioned prefix the upstream site uses and 302 from the root (grafana
+        # and loki both do), so a redirect there is correct, not a failure. Follow
+        # it and require the *final* status to be 200 -- which additionally proves
+        # the redirect target resolves instead of pointing at a 404.
+        read -r final effective <<<"$(curl -sS -o /dev/null -L --max-redirs 5 \
+          -w '%{http_code} %{url_effective}' http://127.0.0.1:8080/ || echo '000 -')"
+
+        if [ "${code}" = "${final}" ]; then
+          echo "GET / -> ${code}"
+        else
+          echo "GET / -> ${code}, followed to ${effective} -> ${final}"
+        fi
+
+        if [ "${final}" != "200" ]; then
+          echo "::error::${IMAGE_REF} does not serve a page at / (final status ${final})."
+          if [ "${final}" = "403" ]; then
+            echo "::error::A 403 usually means the docroot is not world-readable --"
+            echo "::error::check the builder stage's chmod."
+          fi
           exit 1
         fi
 
