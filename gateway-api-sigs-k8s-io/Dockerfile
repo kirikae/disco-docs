@@ -6,7 +6,7 @@
 # PostCSS pipeline), Python (the conformance and wizard data generators) and
 # Hugo Extended itself. Go leads because it is the only one the build compiles
 # with; the other three are installed at exactly the pinned versions.
-FROM docker.io/library/golang:1.26-bookworm AS builder
+FROM docker.io/library/golang:1.27-bookworm AS builder
 
 WORKDIR /app
 
