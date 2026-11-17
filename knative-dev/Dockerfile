@@ -1,4 +1,4 @@
-FROM python:3.12-slim AS builder
+FROM python:3.13-slim AS builder
 
 WORKDIR /app
 
@@ -7,7 +7,9 @@ RUN git config --global --add safe.directory '*'
 
 COPY knative-docs/ .
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Upstream moved from requirements.txt to pyproject.toml/uv.lock.
+RUN pip install --no-cache-dir uv && uv sync --frozen --no-dev
+ENV PATH="/app/.venv/bin:$PATH"
 
 # --- OFFLINE PATCHING (pre-build) ---
 # Drop the Google Analytics config so Material doesn't emit the
